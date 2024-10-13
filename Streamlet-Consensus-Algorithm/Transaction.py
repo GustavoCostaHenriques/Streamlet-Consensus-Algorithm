@@ -1,16 +1,20 @@
-
 class Transaction:
     def __init__(self, sender, receiver, transaction_id, amount):
-        self.sender = sender           
-        self.receiver = receiver          
-        self.transaction_id = transaction_id                
-        self.amount = amount              
+        # Define os atributos privados diretamente
+        self._sender = sender           
+        self._receiver = receiver          
+        self._transaction_id = transaction_id                
+        self._amount = amount              
     
     # Returns an informative representation of the Transaction object.
     def __repr__(self):
         return (f"Transaction(sender={self.sender}, receiver={self.receiver}, "
                 f"transaction_id={self.transaction_id}, amount={self.amount})")
     
+    # Returns if the amount is valid    
+    def is_valid(self):
+        return self.amount > 0
+
     # Getter for the transaction sender
     @property
     def sender(self):
