@@ -8,6 +8,7 @@ class BlockchainNetworkNode:
         self.current_epoch = 0   # Current epoch number
         self.notarized_blocks = []  # List of notarized blocks
         self.votes = {}          # Dictionary with Block --> Votes
+        self.finalized_block = [] # List of finalized blocks
         self.leader = False      # Indicates if the node is the leader for the current epoch
         self.message_queue = []          # Queue to store received messages
         self.peers = []          # List of peers connected to this node
@@ -36,11 +37,11 @@ class BlockchainNetworkNode:
         elif message.msg_type == "Echo":
             block = message.content
             print(f"Node {self._node_id} received an echo message.")
-            self.notorize_vote(block)
-
+            
         elif message.msg_type == "Vote":
             block = message.content
             print(f"Node {self._node_id} received a vote for block {block.length}.")
+            self.notorize_vote(block)
 
         else:
             print(f"Node {self._node_id} received an unknown message type: {message.msg_type}.")
@@ -99,7 +100,7 @@ class BlockchainNetworkNode:
         print(f"Node {self._node_id} voted for block in epoch {self._current_epoch}.")
         
     
-    def notorize_vote(self, block):
+    def notorize_block_votes(self, block):
         
         """Records a vote for a given block and checks if it is notarized.
         
@@ -119,6 +120,54 @@ class BlockchainNetworkNode:
         # Check if the block has more than half of the votes
         if self.votes[block] > len(self.peers) / 2:
             print(f"Node {self.node_id} notarized block {block.length}.")
+        self.notarized_blocks.append(block)
+        self.check_blockchain_notarization()
+        
+    
+    def check_blockchain_notarization(self):
+        
+        """Verifies if the entire blockchain (except the genesis block(first block)) is notarized.
+    
+        If the chain is fully notarized, it is marked as valid.
+    
+        Returns:
+        None"""
+    
+        #Iterate the blockchain's list
+        for block in self.blockchain[1:]:  # Igonores the genesis block
+            if block not in self.notarized_blocks:
+                print(f"Node {self.node_id}: Blockchain is not fully notarized yet.")
+                return
+        print(f"Node {self.node_id}: Blockchain is fully notarized and valid.")
+    
+    def finalize(self):
+        
+        """Finalizes a block if three consecutive notarized blocks are observed.
+
+        This method checks the notarized blocks for consecutive epochs and 
+        finalizes the second block in the sequence.
+
+        Returns:
+            None"""
+    
+        if len(self.notarized_blocks) < 3:
+            return  # We need at least three notarized blocks to finalize
+
+        for i in range(len(self.notarized_blocks) - 2):
+            block1 = self.notarized_blocks[i]
+            block2 = self.notarized_blocks[i + 1]
+            block3 = self.notarized_blocks[i + 2]
+
+            # Check if blocks have consecutive epoch numbers
+            if (block1.epoch + 1 == block2.epoch and
+                block2.epoch + 1 == block3.epoch):
+                # Finalize the second block
+                self.finalized_block = block2
+                print(f"Node {self.node_id} finalized block {block2.length} from epoch {block2.epoch}.")
+            
+                self.print_finalized_blocks() # prints the current state of the finalized blocks list
+                return
+            
     
     def add_transaction(self, transaction):
         
@@ -166,103 +215,104 @@ class BlockchainNetworkNode:
         for peer in self._peers:
             peer.process_message(message)
             print(f"Node {self._node_id} broadcasted message to Node {peer._node_id}.")
-    
-    
-    # Getter for the unique identifier of the node
-    @property
-    def node_id(self):
-        return self._node_id
+            
+    def print_finalized_blocks(self):
+        
+        """Prints the current list of finalized blocks."""
+        
+        print(f"Finalized blocks for Node {self.node_id}:")
+        for block in self.finalized_blocks:
+            print(f" - Block {block.length} from epoch {block.epoch}")
+            
+            
+            
+    # Getter for node_id
+    def get_node_id(self):
+        return self.node_id 
 
-    # Setter for the unique identifier of the node
-    @node_id.setter
-    def node_id(self, value):
-        self._node_id = value
+    # Setter for node_id
+    def set_node_id(self, node_id):
+        self.node_id = node_id  
 
-    # Getter for the local blockchain
-    @property
-    def blockchain(self):
-        return self._blockchain
+    # Getter for blockchain
+    def get_blockchain(self):
+        return self.blockchain  
 
-    # Setter for the local blockchain
-    @blockchain.setter
-    def blockchain(self, value):
-        self._blockchain = value
+    # Setter for blockchain
+    def set_blockchain(self, blockchain):
+        self.blockchain = blockchain  
 
-    # Getter for the pending transactions
-    @property
-    def pending_transactions(self):
-        return self._pending_transactions
+    # Getter for pending_transactions
+    def get_pending_transactions(self):
+        return self.pending_transactions  
 
-    # Setter for the pending transactions
-    @pending_transactions.setter
-    def pending_transactions(self, value):
-        self._pending_transactions = value
+    # Setter for pending_transactions
+    def set_pending_transactions(self, transactions):
+        self.pending_transactions = transactions  
 
-    # Getter for the current epoch number
-    @property
-    def current_epoch(self):
-        return self._current_epoch
+    # Getter for current_epoch
+    def get_current_epoch(self):
+        return self.current_epoch  
 
-    # Setter for the current epoch number
-    @current_epoch.setter
-    def current_epoch(self, value):
-        self._current_epoch = value
+    # Setter for current_epoch
+    def set_current_epoch(self, epoch):
+        self.current_epoch = epoch  
 
-    # Getter for the notarized blocks
-    @property
-    def notarized_blocks(self):
-        return self._notarized_blocks
+    # Getter for notarized_blocks
+    def get_notarized_blocks(self):
+        return self.notarized_blocks  
 
-    # Setter for the notarized blocks
-    @notarized_blocks.setter
-    def notarized_blocks(self, value):
-        self._notarized_blocks = value
+    # Setter for notarized_blocks
+    def set_notarized_blocks(self, blocks):
+        self.notarized_blocks = blocks  
 
-    # Getter for the votes received
-    @property
-    def votes(self):
-        return self._votes
+    # Getter for votes
+    def get_votes(self):
+        return self.votes  
 
-    # Setter for the votes received
-    @votes.setter
-    def votes(self, value):
-        self._votes = value
+    # Setter for votes
+    def set_votes(self, votes):
+        self.votes = votes  
 
-    # Getter for the leader status
-    @property
-    def leader(self):
-        return self._leader
-    
-    # Getter for the queue
-    @property
-    def queue(self):
-        return self._queue
+    # Getter for finalized_block
+    def get_finalized_block(self):
+        return self.finalized_block  
 
-    # Setter for the queue
-    @queue.setter
-    def queue(self, value):
-        self._queue = value
+    # Setter for finalized_block
+    def set_finalized_block(self, blocks):
+        self.finalized_block = blocks  
 
-    # Getter for the list of peers
-    @property
-    def peers(self):
-        return self._peers
+    # Getter for leader
+    def is_leader(self):
+        return self.leader  
 
-    # Setter for the list of peers
-    @peers.setter
-    def peers(self, value):
-        self._peers = value
+    # Setter for leader
+    def set_leader(self, leader_status):
+        self.leader = leader_status 
 
-    # Getter for the node's status
-    @property
-    def status(self):
-        return self._status
+    # Getter for message_queue
+    def get_message_queue(self):
+        return self.message_queue  
 
-    # Setter for the node's status
-    @status.setter
-    def status(self, value):
-        self._status = value
-    
+    # Setter for message_queue
+    def set_message_queue(self, messages):
+        self.message_queue = messages  
+
+    # Getter for peers
+    def get_peers(self):
+        return self.peers 
+
+    # Setter for peers
+    def set_peers(self, peers):
+        self.peers = peers 
+
+    # Getter for status
+    def get_status(self):
+        return self.status  
+
+    # Setter for status
+    def set_status(self, status):
+        self.status = status 
 
 
 
