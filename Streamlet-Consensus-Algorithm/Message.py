@@ -3,7 +3,8 @@ class Message:
         self.msg_type = msg_type  # (Propose, Vote, Echo)
         self.content = content      
         self.sender = sender
-
+    
+    # Returns an informative representation of the Message object.
     def __repr__(self):
         return (f"Message(type={self.msg_type}, sender={self.sender}, "
                 f"content={self.content})")
