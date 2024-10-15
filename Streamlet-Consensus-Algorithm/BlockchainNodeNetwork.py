@@ -8,7 +8,8 @@ class BlockchainNetworkNode:
         self.current_epoch = 0   # Current epoch number
         self.notarized_blocks = []  # List of notarized blocks
         self.votes = {}          # Dictionary with Block --> Votes
-        self.finalized_block = [] # List of finalized blocks
+        self.finalized_blocks = [] # List of finalized blocks
+        self.biggest_finalized_block =[] # The biggest list of finalized blocks
         self.leader = False      # Indicates if the node is the leader for the current epoch
         self.message_queue = []          # Queue to store received messages
         self.peers = []          # List of peers connected to this node
@@ -162,13 +163,57 @@ class BlockchainNetworkNode:
             if (block1.epoch + 1 == block2.epoch and
                 block2.epoch + 1 == block3.epoch):
                 # Finalize the second block
-                self.finalized_block = block2
+                self.finalized_blocks = block2
                 print(f"Node {self.node_id} finalized block {block2.length} from epoch {block2.epoch}.")
+                
+            self.finalize_parents(block2)
             
-                self.print_finalized_blocks() # prints the current state of the finalized blocks list
-                return
+        self.compare_finalized_blocks()
+
+        return
             
     
+    def finalize_parents(self, block):
+        
+        """Finalizes the given block and all its parent blocks.
+
+        Args:
+            block (Block): The block to be finalized along with its parent blocks.
+
+        Returns:
+            None """
+        
+        index_notorized = self.notarized_blocks.index(block) #save the block index
+        while index_notorized >= 0:
+            self.finalized_blocks.append(self.notarized_blocks[index_notorized]) # add the block
+            if index_notorized == 0: 
+                break
+            index_notorized -= 1
+        return 
+    
+    def compare_finalized_blocks(self):
+        
+        """Compares the length of `finalized_blocks` and `biggest_finalized_block`,
+            and prints which one is bigger. Updates `biggest_finalized_block` if 
+            `finalized_blocks` becomes larger. Also prints the contents of the bigger list.
+
+            Returns:
+                None"""
+        
+    
+        # Compare the lengths of the two lists
+        if len(self.finalized_blocks) > len(self.biggest_finalized_block):
+            # Update the biggest finalized block if finalized_blocks is larger
+            self.biggest_finalized_block = self.finalized_blocks.copy()
+            print("The current finalized block list is now bigger than "
+            "the previous biggest.The bigger list was updated.")
+            print(f"Current finalized blocks: {self.finalized_blocks}")
+        
+        else:
+            print("The biggest finalized block list is still bigger than the current finalized blocks.")
+            print(f"Biggest finalized blocks: {self.biggest_finalized_block}")
+
+
     def add_transaction(self, transaction):
         
         """ Adds a transaction to the pending transactions list.
@@ -179,11 +224,11 @@ class BlockchainNetworkNode:
         Returns:
             None """
         
-    if isinstance(transaction, Transaction):
-        self.pending_transactions.append(transaction)
-        print(f"Node {self.node_id} added transaction {transaction.transaction_id}.")
-    else:
-        print(f"Node {self.node_id} failed to add transaction: Not a valid Transaction object.")
+        if isinstance(transaction, Transaction):
+            self.pending_transactions.append(transaction)
+            print(f"Node {self.node_id} added transaction {transaction.transaction_id}.")
+        else:
+            print(f"Node {self.node_id} failed to add transaction: Not a valid Transaction object.")
         
 
     def update_current_leader(self):
@@ -194,12 +239,12 @@ class BlockchainNetworkNode:
         Returns:
         None"""
     
-    # Our way to update de lider system 
-    if self.node_id == self.current_epoch % len(self.peers):
-        self.leader = True
-        print(f"Node {self.node_id} is now the leader for epoch {self.current_epoch}.")
-    else:
-        self.leader = False
+        # Our way to update de lider system 
+        if self.node_id == self.current_epoch % len(self.peers):
+            self.leader = True
+            print(f"Node {self.node_id} is now the leader for epoch {self.current_epoch}.")
+        else:
+            self.leader = False
         
         
     def broadcast(self, message):
@@ -274,13 +319,13 @@ class BlockchainNetworkNode:
     def set_votes(self, votes):
         self.votes = votes  
 
-    # Getter for finalized_block
-    def get_finalized_block(self):
-        return self.finalized_block  
+    # Getter for finalized_blocks
+    def get_finalized_blocks(self):
+        return self.finalized_blocks  
 
-    # Setter for finalized_block
-    def set_finalized_block(self, blocks):
-        self.finalized_block = blocks  
+    # Setter for finalized_blocks
+    def set_finalized_blocks(self, blocks):
+        self.finalized_blocks = blocks  
 
     # Getter for leader
     def is_leader(self):
