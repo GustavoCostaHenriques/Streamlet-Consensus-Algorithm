@@ -9,7 +9,7 @@ class BlockchainNetworkNode:
         self.notarized_blocks = []  # List of notarized blocks
         self.votes = {}          # Dictionary with Block --> Votes
         self.finalized_blocks = [] # List of finalized blocks
-        self.biggest_finalized_block =[] # The biggest list of finalized blocks
+        self.biggest_finalized_block =[] 
         self.leader = False      # Indicates if the node is the leader for the current epoch
         self.message_queue = []          # Queue to store received messages
         self.peers = []          # List of peers connected to this node
@@ -18,8 +18,64 @@ class BlockchainNetworkNode:
 
     def __repr__(self):
         return (f"BlockchainNetworkNode(node_id={self.node_id}, current_epoch={self.current_epoch}, "
-                f"blockchain_length={len(self.blockchain)}, status={self.status})")
+                f"blockchain_length={len(self.blockchain)}, pending_tx={len(self.pending_transactions)}, "
+                f"biggest_finalized_block={len(self.biggest_finalized_block)}, leader={self.leader}, status={self.status})")
+    
+    """ def main():
+        # Inicializa os nós da rede
+        node1 = BlockchainNetworkNode(node_id=1)
+        node2 = BlockchainNetworkNode(node_id=2)
+        node3 = BlockchainNetworkNode(node_id=3)
+
+        # Conecta os nós entre si
+        node1.peers = [node2, node3]
+        node2.peers = [node1, node3]
+        node3.peers = [node1, node2]
+
+        # Define o líder para o primeiro epoch
+        node1.update_current_leader()
+
+        # Executa a rede por um número de rodadas
+        total_rounds = 5  # Você pode ajustar o número de rodadas conforme necessário
+        for node in [node1, node2, node3]:
+            node.run_network(rounds=total_rounds)
+    
+    if __name__ == "__main__":
+        main()
+    
+
+    def run_network(self, rounds=5):
+    
+        #Runs the network for a given number of rounds.
         
+        for round_number in range(rounds):
+            print(f"--- Round {round_number + 1} ---")
+            
+            # Gere uma transação aleatória
+            self.generate_random_transaction() 
+            
+            # Apenas o líder propõe um bloco
+            if self.leader:
+                self.propose_block()
+            
+            # Processa mensagens na fila
+            while self.message_queue:
+                message = self.message_queue.pop(0)  # Retira a mensagem da fila
+                self.process_message(message)
+            
+            # Verifica se o nó pode finalizar um bloco
+            self.finalize()  
+            
+            # Avança para o próximo epoch
+            self.advance_epoch()  
+            
+            # Simula uma possível falha
+            self.simulate_failure()  
+            
+            # Exibe o estado do nó após cada rodada
+            print(self)  
+            print()  # Linha em branco para separação """
+
     def process_message (self, message):
         
         """Processes incoming messages (Propose, Vote, Echo).
@@ -30,6 +86,8 @@ class BlockchainNetworkNode:
         Returns:
         None"""
         
+        self.message_queue.append(message) #add the msg to the queue
+
         if message.msg_type == "Propose":
             block = message.content
             print(f"Node {self._node_id} received a block proposal.")
@@ -268,6 +326,39 @@ class BlockchainNetworkNode:
         print(f"Finalized blocks for Node {self.node_id}:")
         for block in self.finalized_blocks:
             print(f" - Block {block.length} from epoch {block.epoch}")
+            
+    
+    def advance_epoch(self):
+
+        """Advances to the next epoch and elects a new leader."""
+
+        self.current_epoch += 1
+        self.update_current_leader()  
+        print(f"Node {self.node_id} advanced to epoch {self.current_epoch}.")
+
+
+    def simulate_failure(self):
+        """Randomly simulates a failure of the node."""
+        if random.random() < 0.1:  # 10% to fail
+            self.status = "failed"
+            print(f"Node {self.node_id} has crashed!")
+
+    def recover(self):
+        """Recovers the node from a failure."""
+        if self.status == "failed":
+            self.status = "active"
+            self.blockchain = self.load_last_blockchain()  # Método que você deve implementar para carregar a blockchain
+            print(f"Node {self.node_id} has recovered and is now active.")
+    
+    def generate_random_transaction(self):
+
+        """Generates and adds a random transaction."""
+
+        # Simulação simples de transação
+        transaction = Transaction(sender=self.node_id, receiver=random.randint(1, 10), transaction_id=random.randint(1000, 9999), amount=random.uniform(1.0, 100.0))
+        self.add_transaction(transaction)
+
+    
             
             
             
