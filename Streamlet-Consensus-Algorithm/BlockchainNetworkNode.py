@@ -6,18 +6,18 @@ import random
 
 class BlockchainNetworkNode:
     def __init__(self, node_id):
-        self.node_id = node_id  # Unique identifier for the node
-        self.blockchain = []     # Local blockchain for the node
-        self.pending_transactions = []  # Transactions pending to be included in a block
-        self.current_epoch = 0   # Current epoch number
-        self.notarized_blocks = []  # List of notarized blocks
-        self.votes = {}          # Dictionary with Block --> Votes
-        self.finalized_blocks = [] # List of finalized blocks
-        self.biggest_finalized_block = [] 
-        self.leader = False      # Indicates if the node is the leader for the current epoch
-        self.message_queue = []          # Queue to store received messages
-        self.peers = []          # List of peers connected to this node
-        self.status = "active"   # Current status of the node
+        self.node_id = node_id              # Unique identifier for the node
+        self.blockchain = []                # Local blockchain for the node
+        self.pending_transactions = []      # Transactions pending to be included in a block
+        self.current_epoch = 0              # Current epoch number
+        self.notarized_blocks = []          # List of notarized blocks
+        self.votes = {}                     # Dictionary with Block --> Votes
+        self.finalized_blocks = []          # List of finalized blocks
+        self.biggest_finalized_block = []   # Biggest list of finalized blocks
+        self.leader = False                 # Indicates if the node is the leader for the current epoch
+        self.message_queue = []             # Queue to store received messages
+        self.peers = []                     # List of peers connected to this node
+        self.status = "active"              # Current status of the node
 
 
     def __repr__(self):
@@ -36,6 +36,8 @@ class BlockchainNetworkNode:
         None"""
         
         self.message_queue.append(message) #add the msg to the queue
+        if(message in message.queue):      #check if the message is already in the queue
+            return
 
         if message.msg_type == "Propose":
             block = message.content
@@ -114,7 +116,7 @@ class BlockchainNetworkNode:
             print(f"Node {self._node_id} cannot vote for an empty block.")
             return  
 
-        # We only add a block if it is longer than the blockchain
+        # We only add a block if index of the block is bigger than the blockchain
         if block.length > len(self._blockchain):
             self._blockchain.append(block)
             
@@ -319,12 +321,10 @@ class BlockchainNetworkNode:
         """Generates and adds a random transaction."""
 
         # Simulação simples de transação
-        transaction = Transaction(sender=self.node_id, receiver=random.randint(1, 10), transaction_id=random.randint(1000, 9999), amount=random.uniform(1.0, 100.0))
+        transaction = Transaction(sender=self.node_id, receiver=random.randint(1, 3), transaction_id=random.randint(1000, 9999), amount=random.uniform(1.0, 100.0))
         self.add_transaction(transaction)
 
     
-            
-            
             
     # Getter for node_id
     def get_node_id(self):
