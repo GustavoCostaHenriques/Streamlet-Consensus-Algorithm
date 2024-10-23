@@ -1,11 +1,8 @@
 import BlockchainNetworkNode
 
-def run_network(BlockchainNetworkNode, rounds=5):
+def run_network(BlockchainNetworkNode):
 
     #Runs the network for a given number of rounds.
-    
-    for round_number in range(rounds):
-        print(f"--- Round {round_number + 1} ---")
         
         # Gere uma transação aleatória
         BlockchainNetworkNode.generate_random_transaction()
@@ -35,11 +32,14 @@ def main():
     node3.peers = [node1, node2]
 
     # Define o líder para o primeiro epoch
+    rounds_number=5
     leaderId = node1.update_current_leader()
-    for node in [node1, node2, node3]:
-        if(leaderId == node.get_node_id()):
-            node.set_leader(True)
-            run_network(node,rounds=5)
+    for round in range(rounds_number):
+        print(f"round{round}")
+        for node in [node1, node2, node3]:
+            if(leaderId == node.get_node_id()):
+                node.set_leader(True)
+                run_network(node)
 
 
     """ # Executa a rede por um número de rodadas
