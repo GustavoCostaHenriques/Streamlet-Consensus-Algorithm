@@ -53,3 +53,8 @@ class Block:
     @property
     def transactions(self):
         return self._transactions
+    
+    # Setter for the block's number
+    @transactions.setter
+    def transactions(self, value):
+        self._transactions = value

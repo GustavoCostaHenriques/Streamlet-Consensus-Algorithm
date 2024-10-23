@@ -34,28 +34,28 @@ class BlockchainNetworkNode:
 
         Returns:
         None"""
-        
+        print(f"{self.node_id} has received{message.msg_type}")
         self.message_queue.append(message) #add the msg to the queue
-        if(message in message.queue):      #check if the message is already in the queue
+        if(message in self.message_queue):      #check if the message is already in the queue
             return
 
         if message.msg_type == "Propose":
             block = message.content
-            print(f"Node {self._node_id} received a block proposal.")
+            print(f"Node {self.node_id} received a block proposal.")
             self.vote_block(block) 
             
         elif message.msg_type == "Echo":
             echoMessage = message.content
-            print(f"Node {self._node_id} received an echo message.")
+            print(f"Node {self.node_id} received an echo message.")
             
             if echoMessage.msg_type == "Propose":
                 block = echoMessage.content
-                print(f"Node {self._node_id} received a block proposal.")
+                print(f"Node {self.node_id} received a block proposal.")
                 self.vote_block(block) 
                 
             elif echoMessage.msg_type == "Vote":
                 block = echoMessage.content
-                print(f"Node {self._node_id} received a vote for block {block.length}.")
+                print(f"Node {self.node_id} received a vote for block {block.length}.")
                 self.notorize_block_votes(block)
                 
             self.broadcast(Message(msg_type="Echo", content=echoMessage, sender=self.id))
@@ -67,7 +67,7 @@ class BlockchainNetworkNode:
             self.notorize_block_votes(block)
 
         else:
-            print(f"Node {self._node_id} received an unknown message type: {message.msg_type}.")
+            print(f"Node {self.node_id} received an unknown message type: {message.msg_type}.")
             
         self.broadcast(Message(msg_type="Echo", content=message, sender=self.id))
             
@@ -83,22 +83,22 @@ class BlockchainNetworkNode:
         Returns:
         None"""
         
-        if not self._leader: # Not the leader of this epoch( Only the leader can propose a block)
-            print(f"Node {self._node_id} is not the leader for epoch {self._current_epoch}")
-            return  
+        if not self.leader: # Not the leader of this epoch( Only the leader can propose a block)
+            print(f"Node {self.node_id} is not the leader for epoch {self.current_epoch}")
+            return 
     
         # Create a new block containing the pending transactions
-        proposed_block = Block(
+        proposed_block = Block.Block(
             # returns the hash of the last block ,if the list is empty , returns 0
-            previous_hash=self._blockchain[-1].calculate_hash() if self._blockchain else "0",  # Hash of the last block
-            epoch=self._current_epoch,
-            length=len(self._blockchain) + 1,
-            transactions=self._pending_transactions
+            previous_hash=self.blockchain[-1].calculate_hash() if self.blockchain else "0",  # Hash of the last block
+            epoch=self.current_epoch,
+            length=len(self.blockchain) + 1,
+            transactions=self.pending_transactions
             )
     
         # Broadcast the proposed block to all peers
-        self.broadcast(Message(msg_type="Propose", content=proposed_block, sender=self._node_id))
-        print(f"Node {self._node_id} proposed a block for epoch {self._current_epoch}")
+        self.broadcast(Message.Message(msg_type="Propose", content=proposed_block, sender=self.node_id))
+        print(f"Node {self.node_id} proposed a block for epoch {self.current_epoch}")
         
         
     def vote_block(self, block):
@@ -113,16 +113,16 @@ class BlockchainNetworkNode:
         
         # Check if the block is valid for voting
         if len(block.transactions) == 0:
-            print(f"Node {self._node_id} cannot vote for an empty block.")
+            print(f"Node {self.node_id} cannot vote for an empty block.")
             return  
-
-        # We only add a block if index of the block is bigger than the blockchain
-        if block.length > len(self._blockchain):
-            self._blockchain.append(block)
+        
+        # Check if the e proposed block index is bigger than the notarized chain
+        if block.length > len(self.notarized_blocks):
+            self.blockchain.append(block)
             
         # Broadcast the vote to all peers
-        self.broadcast(Message(msg_type="Vote", content=block, sender=self._node_id))
-        print(f"Node {self._node_id} voted for block in epoch {self._current_epoch}.")
+        self.broadcast(Message(msg_type="Vote", content=block, sender=self.node_id))
+        print(f"Node {self.node_id} voted for block in epoch {self.current_epoch}.")
         
     
     def notorize_block_votes(self, block):
@@ -248,7 +248,7 @@ class BlockchainNetworkNode:
         Returns:
             None """
         
-        if isinstance(transaction, Transaction):
+        if isinstance(transaction, Transaction.Transaction):
             self.pending_transactions.append(transaction)
             print(f"Node {self.node_id} added transaction {transaction.transaction_id}.")
         else:
@@ -264,11 +264,14 @@ class BlockchainNetworkNode:
         None"""
     
         # Our way to update de lider system 
-        if self.node_id == self.current_epoch % len(self.peers):
+        leaderId = random.randint(1, len(self.peers))
+        if self.node_id == leaderId:
             self.leader = True
             print(f"Node {self.node_id} is now the leader for epoch {self.current_epoch}.")
         else:
+            print(f"Node {leaderId} is now the leader for epoch {self.current_epoch}.")
             self.leader = False
+        return leaderId
         
         
     def broadcast(self, message):
@@ -281,9 +284,9 @@ class BlockchainNetworkNode:
         Returns:
         None"""
     
-        for peer in self._peers:
+        for peer in self.peers:
             peer.process_message(message)
-            print(f"Node {self._node_id} broadcasted message to Node {peer._node_id}.")
+            print(f"Node {self.node_id} broadcasted message to Node {peer.node_id}.")
             
     def print_finalized_blocks(self):
         
@@ -299,8 +302,8 @@ class BlockchainNetworkNode:
         """Advances to the next epoch and elects a new leader."""
 
         self.current_epoch += 1
+        print(f"Node {self.node_id} will advance to epoch {self.current_epoch}.")
         self.update_current_leader()  
-        print(f"Node {self.node_id} advanced to epoch {self.current_epoch}.")
 
 
     def simulate_failure(self):
@@ -321,7 +324,7 @@ class BlockchainNetworkNode:
         """Generates and adds a random transaction."""
 
         # Simulação simples de transação
-        transaction = Transaction(sender=self.node_id, receiver=random.randint(1, 3), transaction_id=random.randint(1000, 9999), amount=random.uniform(1.0, 100.0))
+        transaction = Transaction.Transaction(sender=self.node_id, receiver=random.randint(1, 3), transaction_id=random.randint(1000, 9999), amount=random.uniform(1.0, 100.0))
         self.add_transaction(transaction)
 
     
