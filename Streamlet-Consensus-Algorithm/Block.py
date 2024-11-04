@@ -1,5 +1,5 @@
 import hashlib
-
+import Transaction
 class Block:
     def __init__(self, previous_hash, epoch, length, transactions):
         self.previous_hash = previous_hash  
@@ -58,3 +58,15 @@ class Block:
     @transactions.setter
     def transactions(self, value):
         self._transactions = value
+
+    def to_dict(self):
+        return{
+            'previous_hash' : self.previous_hash ,  
+            'epoch' :self.epoch,                   
+            'length' : self.length,                 
+            'transactions': [tx.to_dict() for tx in self.transactions],     
+        }
+    @classmethod
+    def from_dict(cls, data):
+        transactions = [Transaction.Transaction(**tx) for tx in data['transactions']]
+        return cls(data['previous_hash'], data['epoch'], data['length'], transactions)
