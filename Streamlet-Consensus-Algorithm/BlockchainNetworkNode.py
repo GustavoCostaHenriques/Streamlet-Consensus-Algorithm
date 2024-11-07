@@ -2,16 +2,19 @@ import json
 import pickle
 import socket
 import threading
-import time
 import Block
 import Message
 import Transaction
 import random
+import os
+from colorama import Fore, Style, init
 
+# Initialize colorama
+init(autoreset=True)
 
 class BlockchainNetworkNode:
     def __init__(self, node_id,host='127.0.0.1', port=5000):
-        initialBlock = Block.Block(previous_hash=0,epoch=0,length=0,transactions=0)
+        initialBlock = Block.Block(previous_hash=0,epoch=0,length=0,transactions=[])
         self.host = host
         self.port = port
         self.node_id = node_id              # Unique identifier for the node
@@ -93,8 +96,7 @@ class BlockchainNetworkNode:
         self.message_queue.append(messageId)
         if message_type == 'Propose':
             self.epochBlock= data
-            print(data.transactions)
-            print(f'Node {self.node_id} received Propose from {message.sender}')
+            print(f'Node {self.node_id} received Propose from {message.sender}\n')
             self.current_epoch = data.epoch           
             #self.broadcast_echo(message)
             if (self.biggestNtChain<len(message.longestChain)) or self.biggestNtChain==0 and len(message.longestChain)==0:
@@ -107,13 +109,13 @@ class BlockchainNetworkNode:
             #self.broadcast_echo(message)
             self.notorize_block_votes(data)
         elif message_type == 'Echo':
-            print(f'{self.node_id} Received echo {data.msg_type}" from "{message.sender}')
+            print(f'{self.node_id} received echo {data.msg_type}" from "{message.sender}\n')
             if data.msg_type=='Propose':
-                print(f'{self.node_id} Received propose from { data.sender}')
+                print(f'{self.node_id} received propose in the Echo from { data.sender}\n')
                 self.current_epoch = data.epoch
                 self.vote_block(data.content)
             elif data.msg_type=='Vote':
-                print(f'{self.node_id} Received Vote from {data.sender}')
+                print(f'{self.node_id} received Vote in the Echo from {data.sender}\n')
                 self.notorize_block_votes(data.content)
 
     def propose_block(self):
@@ -250,14 +252,14 @@ class BlockchainNetworkNode:
             print(f'An unexpected error occurred: {e}')
 
     def broadcast(self, msg):
-        print(f"Node {self.node_id} sent {msg.msg_type} , {msg.content}")
+        print(f"Node {self.node_id} sent {msg.msg_type}\n")
         for node in self.peers[1:]:
             messageId = f"{msg.msg_type}{msg.content}{msg.sender}" 
             self.message_queue.append(messageId)
             self.send_message(node,msg)
 
     def broadcast_echo(self, msg):
-        print(f"Node {self.node_id} sent echo")
+        print(f"Node {self.node_id} sent echo\n")
         for node in self.peers[1:]:
             messageId = f"{msg.msg_type}{msg.content}{msg.sender}" 
             self.message_queue.append(messageId)
@@ -280,7 +282,7 @@ class BlockchainNetworkNode:
         
         if isinstance(transaction, Transaction.Transaction):
             self.pending_transactions.append(transaction)
-            print(f"Node {self.node_id} added transaction {transaction.transaction_id}.")
+            print(f"Node {self.node_id} added transaction {transaction.transaction_id}")
         else:
             print(f"Node {self.node_id} failed to add transaction: Not a valid Transaction object.")
 
@@ -427,7 +429,7 @@ class BlockchainNetworkNode:
 
     @status.setter
     def status(self, value):
-        self._status = value
+        self._status = value 
 
     def menu(self, inp):
         if inp =='l':
@@ -437,9 +439,36 @@ class BlockchainNetworkNode:
         elif inp == "e":
             self.resetState()
         elif inp =='b':
-            for block in self.notarized_blocks:
-                print(str(block.epoch) + " "+ str(block.transactions))
+            self.print_info_divider(f"Notarized chain of node {self.node_id}", Fore.YELLOW)
+            self.print_chain(self.notarized_blocks)
+            self.print_info_divider(f"End of notarized chain of node {self.node_id}", Fore.YELLOW)
         elif inp =='f':
-            print(self.finalized_blocks)
+            self.print_info_divider(f"Notarized chain of node {self.node_id}", Fore.RED)
+            self.print_chain(self.finalized_blocks)
+            self.print_info_divider(f"End of notarized chain of node {self.node_id}", Fore.RED)
         elif inp =='bl':
-            print(self.blockchain)   
+            self.print_info_divider(f"BlockChain of node {self.node_id}", Fore.BLUE)
+            self.print_chain(self.blockchain)
+            self.print_info_divider(f"End of BlockChain of node {self.node_id}", Fore.BLUE)
+            
+    def print_chain(self, chain):
+        print()
+        for block in chain:
+            print(f"Block with epoch {block.epoch} and length {block.length} has {len(block.transactions)} transactions:")
+            transcationNumber = 1
+            for transaction in block.transactions:
+                print(f"\t Transaction {transcationNumber} [ID-{transaction.transaction_id} Sender-{transaction.sender} Receiver-{transaction.receiver} Amount:{transaction.amount:.2f}]")
+                transcationNumber += 1
+            print()
+        
+    def print_info_divider(self, text="", color=Fore.RED):   
+        columns, _ = os.get_terminal_size()
+        if text:
+            # Calculate the padding on each side of the text to center it
+            padding = (columns - len(text) - 2) // 2  # Subtract 2 to account for spaces around the text
+            if padding > 0:
+                print(color + '-' * padding + f" {text} " + '-' * padding + Style.RESET_ALL)
+            else:
+                print(color + text + Style.RESET_ALL)  # In case the text is wider than the terminal width
+        else:
+            print(color + '-' * columns + Style.RESET_ALL)

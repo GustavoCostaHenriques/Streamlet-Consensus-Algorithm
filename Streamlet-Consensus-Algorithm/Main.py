@@ -72,11 +72,16 @@ def main():
                 elif(Letter == 'B'):
                     print()
                     node.menu('bl')
+                else:
+                    node = nodes[int(Letter)]
+                    Info = int(Letter)
 
+                print()
                 Letter = input(f"Node {Info} selected.\n" 
                          "If you want to see the notarized blocks insert 'N'.\n"
                          "If you want to see the finalized blocks insert 'F'.\n"
                          "If you want to see the entire blockChain insert 'B'.\n"
+                         "If you want to see another node, insert the number you want to see.\n"
                          "If you want to go to the next epoch insert 'E'.:\n=> ")
             print()
            
