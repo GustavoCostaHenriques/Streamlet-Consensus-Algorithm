@@ -29,6 +29,7 @@ class BlockchainNetworkNode:
         self.status = "active"              # Current status of the node
         self.lock = threading.Lock()
         self.delta = 0
+        self.epochBlock= None
 
         threading.Thread(target=self.start_server, daemon=True).start()
         threading.Thread(target=self.finalize, daemon=True).start()
@@ -91,6 +92,8 @@ class BlockchainNetworkNode:
         
         self.message_queue.append(messageId)
         if message_type == 'Propose':
+            self.epochBlock= data
+            print(data.transactions)
             print(f'Node {self.node_id} received Propose from {message.sender}')
             self.current_epoch = data.epoch           
             #self.broadcast_echo(message)
@@ -100,7 +103,7 @@ class BlockchainNetworkNode:
                 self.vote_block(data)
             self.notorize_block_votes(data) 
         elif message_type == 'Vote':
-            print(f'Node {self.node_id} received Vote from {message.sender}')
+            print(f'Node {self.node_id} received Vote from {message.sender}\n')
             #self.broadcast_echo(message)
             self.notorize_block_votes(data)
         elif message_type == 'Echo':
@@ -144,11 +147,17 @@ class BlockchainNetworkNode:
             print(f"Node {self.node_id} cannot vote for an empty block.")
             return 
             
-        self.blockchain.append(block) # Append the block received to the blockChain
-        block.transactions = []
+        self.blockchain.append(self.epochBlock) # Append the block received to the blockChain
+        newBlock = Block.Block(
+            # Returns the hash of the last block ,if the list is empty , returns 0
+            previous_hash=block.previous_hash,  # Hash of the last block
+            epoch=block.epoch,
+            length=block.length,
+            transactions=[]
+            )
         
         # Broadcast the vote to all peers
-        self.broadcast(Message.Message(msg_type="Vote", content=block, sender=self.node_id,longestChain=[]))
+        self.broadcast(Message.Message(msg_type="Vote", content=newBlock, sender=self.node_id,longestChain=[]))
 
     def notorize_block_votes(self, block):
         
@@ -169,7 +178,7 @@ class BlockchainNetworkNode:
             self.votes += 1 # Increment the vote counter for the block
             # Check if the block has more than half of the votes
             if self.votes > len(self.peers)/ 2:
-                print(f"Node {self.node_id} notarized block {block.length}.")
+                print(f"Node {self.node_id} notarized block {block.length}\n")
                 epoch = block.epoch
                 for blockInChain in self.blockchain:
                     if blockInChain.epoch == epoch:
@@ -177,7 +186,7 @@ class BlockchainNetworkNode:
 
     def finalize(self):
         while True:
-            if len(self._notarized_blocks)>=3:
+            if len(self._notarized_blocks)>=3 and (self.notarized_blocks[:-1] not in self.finalized_blocks):
                 if self.notarized_blocks[len(self.notarized_blocks)-1].epoch == (self.notarized_blocks[len(self.notarized_blocks)-2].epoch)+1 and self.notarized_blocks[len(self.notarized_blocks)-1].epoch == (self.notarized_blocks[len(self.notarized_blocks)-3].epoch)+2:
                     self.finalized_blocks = self.notarized_blocks[:-1]
                     self.compare_finalized_blocks()
@@ -196,13 +205,7 @@ class BlockchainNetworkNode:
         if len(self.finalized_blocks) > len(self.biggest_finalized_block):
             # Update the biggest finalized block if finalized_blocks is larger
             self.biggest_finalized_block = self.finalized_blocks.copy()
-            print(f"{self.node_id} The current finalized block list is now bigger than "
-            "the previous biggest.The bigger list was updated.")
-            print(f"{self.node_id} Current finalized blocks: {self.finalized_blocks}")
-        
-        else:
-            print(f"{self.node_id} The biggest finalized block list is still bigger than the current finalized blocks.")
-            print(f"Biggest finalized blocks: {self.biggest_finalized_block}")
+    
 
     def check_blockchain_notarization(self):
         
@@ -299,6 +302,7 @@ class BlockchainNetworkNode:
         self.pending_transactions=[]
         self.leader=False
         self.message_queue=[]
+        self.epochBlock= None
 
     @property
     def host(self):

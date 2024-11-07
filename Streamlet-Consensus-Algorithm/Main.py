@@ -48,12 +48,39 @@ def main():
         for node in nodes:
             node.menu("e")
         print()
-        Info = int(input("If you want to go to the next epoch please insert 0.\n" 
+        Info = int(input("If you want to go to the next epoch please insert -1.\n" 
                          "If not, please insert the number of the node you want to check:\n=> "))
         
-        if(Info == 0):
+        if(Info == -1):
+            print()
             continue
+        else:
+            node = nodes[Info]
+            print()
+            Letter = input(f"Node {Info} selected.\n" 
+                         "If you want to see the notarized blocks insert 'N'.\n"
+                         "If you want to see the finalized blocks insert 'F'.\n"
+                         "If you want to see the entire blockChain insert 'B'.\n"
+                         "If you want to go to the next epoch insert 'E'.:\n=> ")
+            while(Letter != 'E'):
+                if (Letter == 'N'):
+                    print()
+                    node.menu('b')
+                elif(Letter == 'F'):
+                    print()
+                    node.menu('f')
+                elif(Letter == 'B'):
+                    print()
+                    node.menu('bl')
 
+                Letter = input(f"Node {Info} selected.\n" 
+                         "If you want to see the notarized blocks insert 'N'.\n"
+                         "If you want to see the finalized blocks insert 'F'.\n"
+                         "If you want to see the entire blockChain insert 'B'.\n"
+                         "If you want to go to the next epoch insert 'E'.:\n=> ")
+            print()
+           
+    
     print()    
     print_simulation_divider("End of simulation")
     print()
