@@ -25,22 +25,21 @@ class BlockchainNetworkNode:
         self.biggest_finalized_block = []   # Biggest list of finalized blocks
         self.leader = False                 # Indicates if the node is the leader for the current epoch
         self.message_queue = []             # Queue to store received messages
-        self.peers = []                     # List of peers connected to this node
+        self.peers = [(host, port)]         # List of peers connected to this node
         self.status = "active"              # Current status of the node
         self.lock = threading.Lock()
         self.delta = 0
 
         threading.Thread(target=self.start_server, daemon=True).start()
+        threading.Thread(target=self.finalize, daemon=True).start()
 
     def start_server(self):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.bind((self.host, self.port))
         server_socket.listen()
-        #print(f'Node {self.node_id} listening on {self.host}:{self.port}')
 
         while True:
             client_socket, address = server_socket.accept()
-            print(f'{self.node_id} Connection from {address}')
             threading.Thread(target=self.handle_client, args=(client_socket,), daemon=True).start()
 
     def handle_client(self, client_socket):
@@ -86,23 +85,22 @@ class BlockchainNetworkNode:
             messageId = f"{data.msg_type}{data.content}{data.sender}"   
 
         if(messageId in self.message_queue or data in self.message_queue):
-            print(f"message already received {message_type} with {data.msg_type} and {data.sender}")      #check if the message is already in the queue
+            #check if the message is already in the queue
+            print(f"message already received {message_type} with {data.msg_type} and {data.sender}")  
             return
         
         self.message_queue.append(messageId)
-        if message_type=='EpochEnd':
-            self.resetState()
-            #self.menu()
-        elif message_type == 'Propose':
-            print(f'{self.node_id} Received propose')
-            self.current_epoch = data.epoch
+        if message_type == 'Propose':
+            print(f'Node {self.node_id} received Propose from {message.sender}')
+            self.current_epoch = data.epoch           
             #self.broadcast_echo(message)
             if (self.biggestNtChain<len(message.longestChain)) or self.biggestNtChain==0 and len(message.longestChain)==0:
                 self.biggestNtChain=len(message.longestChain)
                 self.notarized_blocks=message.longestChain
                 self.vote_block(data)
+            self.notorize_block_votes(data) 
         elif message_type == 'Vote':
-            print(f'{self.node_id} Received Vote from {message.sender}')
+            print(f'Node {self.node_id} received Vote from {message.sender}')
             #self.broadcast_echo(message)
             self.notorize_block_votes(data)
         elif message_type == 'Echo':
@@ -116,20 +114,19 @@ class BlockchainNetworkNode:
                 self.notorize_block_votes(data.content)
 
     def propose_block(self):
-        self.generate_random_transaction()
         if not self.leader: # Not the leader of this epoch( Only the leader can propose a block)
             print(f"Node {self.node_id} is not the leader for epoch {self.current_epoch}")
             return 
     
         # Create a new block containing the pending transactions
         proposed_block = Block.Block(
-            # returns the hash of the last block ,if the list is empty , returns 0
+            # Returns the hash of the last block ,if the list is empty , returns 0
             previous_hash=self.blockchain[-1].calculate_hash() if self.blockchain else "0",  # Hash of the last block
             epoch=self.current_epoch,
-            length=len(self.blockchain) + 1,
+            length=len(self.blockchain),
             transactions=self.pending_transactions
             )
-        print(len(self.notarized_blocks))
+        self.blockchain.append(proposed_block)
         self.broadcast(Message.Message(msg_type="Propose", content=proposed_block, sender=self.node_id,longestChain=self.notarized_blocks))
 
     def vote_block(self, block):
@@ -147,9 +144,11 @@ class BlockchainNetworkNode:
             print(f"Node {self.node_id} cannot vote for an empty block.")
             return 
             
+        self.blockchain.append(block) # Append the block received to the blockChain
+        block.transactions = []
+        
         # Broadcast the vote to all peers
         self.broadcast(Message.Message(msg_type="Vote", content=block, sender=self.node_id,longestChain=[]))
-        print(f"Node {self.node_id} voted for block in epoch {self.current_epoch}.")
 
     def notorize_block_votes(self, block):
         
@@ -168,21 +167,20 @@ class BlockchainNetworkNode:
                 return
             
             self.votes += 1 # Increment the vote counter for the block
-            print(self.votes)
             # Check if the block has more than half of the votes
             if self.votes > len(self.peers)/ 2:
-                print(threading.get_native_id())
                 print(f"Node {self.node_id} notarized block {block.length}.")
-                self.notarized_blocks.append(block)
-        self.check_blockchain_notarization()
+                epoch = block.epoch
+                for blockInChain in self.blockchain:
+                    if blockInChain.epoch == epoch:
+                        self.notarized_blocks.append(blockInChain)
 
     def finalize(self):
-        if len(self._notarized_blocks)>=3:
-            if self.notarized_blocks[len(self.notarized_blocks)-1].epoch == (self.notarized_blocks[len(self.notarized_blocks)-2].epoch)+1 and self.notarized_blocks[len(self.notarized_blocks)-1].epoch == (self.notarized_blocks[len(self.notarized_blocks)-3].epoch)+2:
-                self.finalized_blocks = self.notarized_blocks[:-1]
-                self.compare_finalized_blocks()
-        else:
-            print("cant finalize len<3")
+        while True:
+            if len(self._notarized_blocks)>=3:
+                if self.notarized_blocks[len(self.notarized_blocks)-1].epoch == (self.notarized_blocks[len(self.notarized_blocks)-2].epoch)+1 and self.notarized_blocks[len(self.notarized_blocks)-1].epoch == (self.notarized_blocks[len(self.notarized_blocks)-3].epoch)+2:
+                    self.finalized_blocks = self.notarized_blocks[:-1]
+                    self.compare_finalized_blocks()
 
     def compare_finalized_blocks(self):
         
@@ -235,7 +233,7 @@ class BlockchainNetworkNode:
                 client_socket.connect(node_address)
                 serialized_message = pickle.dumps(message)
                 message_length = len(serialized_message)
-                # Envia primeiro o comprimento da mensagem, depois a mensagem
+                # Send first the length of the message, then the message
                 client_socket.sendall(message_length.to_bytes(4, 'big') + serialized_message)
         except ConnectionRefusedError:
             print(f'Connection refused by {node_address}. The node may be offline.')
@@ -249,15 +247,15 @@ class BlockchainNetworkNode:
             print(f'An unexpected error occurred: {e}')
 
     def broadcast(self, msg):
-        print(f"{self.node_id} sent {msg.msg_type} , {msg.content}")
-        for node in self.peers:
+        print(f"Node {self.node_id} sent {msg.msg_type} , {msg.content}")
+        for node in self.peers[1:]:
             messageId = f"{msg.msg_type}{msg.content}{msg.sender}" 
             self.message_queue.append(messageId)
             self.send_message(node,msg)
 
     def broadcast_echo(self, msg):
-        print(f"{self.node_id} sent echo")
-        for node in self.peers:
+        print(f"Node {self.node_id} sent echo")
+        for node in self.peers[1:]:
             messageId = f"{msg.msg_type}{msg.content}{msg.sender}" 
             self.message_queue.append(messageId)
             self.send_message(node,Message.Message(msg_type="Echo",content=msg,sender=msg.sender,longestChain=[]))
@@ -287,37 +285,14 @@ class BlockchainNetworkNode:
 
         """Generates and adds a random transaction."""
 
-        # Simulação simples de transação
-        transaction = Transaction.Transaction(sender=self.node_id, receiver=random.randint(1, 3), transaction_id=random.randint(1000, 9999), amount=random.uniform(1.0, 100.0))
+        # Simulates a simple transaction
+        transaction = Transaction.Transaction(sender=self.node_id, receiver=random.randint(1, len(self.peers)), transaction_id=random.randint(1000, 9999), amount=random.uniform(1.0, 100.0))
         self.add_transaction(transaction)
 
     def advance_epoch(self):
-        self.current_epoch += 1
-        print(f"Node {self.node_id} will advance to epoch {self.current_epoch}.")
-        
-        # Start the epoch process in a separate thread
-        self.run_epoch_process()
-        
-    def run_epoch_process(self):
-        """Handles the epoch process and enforces a time limit."""
-        #self.leader = True  # Assign leader status for this epoch
-        
+        self.current_epoch += 1        
         # Propose a block
         self.propose_block()
-        
-        # Wait for 2 seconds to complete the epoch process
-        #time.sleep(2)
-        
-        """ # End of the epoch process, reset leader status
-        self.resetState()
-        self.broadcast(Message.Message(msg_type="EpochEnd", content=self.current_epoch, sender=self.node_id,longestChain=[]))
-        print(f"Node {self.node_id} has completed epoch {self.current_epoch}.")
-        self.menu() """
-    
-    def end_state(self):
-        self.resetState()
-        self.broadcast(Message.Message(msg_type="EpochEnd", content=self.current_epoch, sender=self.node_id,longestChain=[]))
-        print(f"Node {self.node_id} has completed epoch {self.current_epoch}.")
 
     def resetState(self):
         self.votes=0
@@ -451,43 +426,16 @@ class BlockchainNetworkNode:
         self._status = value
 
     def menu(self, inp):
-        #inp = input("enter command: l- assign leader, e- start epoch ,b-notarized blocks,f-finalize,bl-blockchain ")
         if inp =='l':
             self.leader = True 
         elif inp =='s':
             self.advance_epoch() 
         elif inp == "e":
-            self.end_state()
+            self.resetState()
         elif inp =='b':
             for block in self.notarized_blocks:
                 print(str(block.epoch) + " "+ str(block.transactions))
         elif inp =='f':
-            self.finalize()
+            print(self.finalized_blocks)
         elif inp =='bl':
-            print(self.blockchain)
-            
-def main():
-    
-    var = input("pls enter the node id: ")
-    if var=='1':
-        node = BlockchainNetworkNode(var,"127.0.0.1" , 5000)
-    elif var=='2':
-        node = BlockchainNetworkNode(var,"127.0.0.1" , 5001)
-    elif var=='3':
-        node = BlockchainNetworkNode(var,"127.0.0.1" , 5002)
-    port = input("port")       
-    if port=='1':
-        node.add_node(("127.0.0.1" , int(5001)))
-        node.add_node(("127.0.0.1" , int(5002)))
-    elif port=='2':
-        node.add_node(("127.0.0.1" , int(5000)))
-        node.add_node(("127.0.0.1" , int(5002)))
-    elif port=='3':
-        node.add_node(("127.0.0.1" , int(5000)))
-        node.add_node(("127.0.0.1" , int(5001)))
-
-    while True:
-        node.menu()
-
-if __name__ == "__main__":
-        main()    
+            print(self.blockchain)   

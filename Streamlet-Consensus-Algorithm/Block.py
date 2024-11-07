@@ -16,8 +16,7 @@ class Block:
 
     # Returns an informative representation of the Block object.
     def __repr__(self):
-        return (f"Block(previous_hash={self.previous_hash}, epoch={self.epoch}, "
-                f"length={self.length}, transactions={self.transactions})")
+        return (f"Block(epoch={self.epoch}, length={self.length}, transactions={self.transactions})")
     
     # Getter for the previous block's hash
     @property
