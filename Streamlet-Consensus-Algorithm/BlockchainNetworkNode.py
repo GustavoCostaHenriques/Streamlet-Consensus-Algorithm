@@ -1,6 +1,7 @@
 import json
 import pickle
 import socket
+import sys
 import threading
 import Block
 import Message
@@ -16,6 +17,7 @@ class BlockchainNetworkNode:
     def __init__(self, node_id,host='127.0.0.1', port=5000):
         initialBlock = Block.Block(previous_hash=0,hash=0,epoch=0,length=0,transactions=[])
         self.host = host
+        self.num_of_peers= 0
         self.port = port
         self.node_id = node_id              # Unique identifier for the node
         self.blockchain = [initialBlock]    # Local blockchain for the node
@@ -32,10 +34,26 @@ class BlockchainNetworkNode:
         self.status = "active"              # Current status of the node
         self.lock = threading.Lock()
         self.delta = 0
-        self.epochBlock= None
+        self.epochBlock = None
+        self.did_notorize = False
 
         threading.Thread(target=self.start_server, daemon=True).start()
         threading.Thread(target=self.finalize, daemon=True).start()
+        self.command_listener()
+
+    def command_listener(self):
+        print("Já está a ouvir")
+        command_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        command_socket.bind((self.host, self.port + 1000))  # Usa uma porta diferente para o comando
+        command_socket.listen(1)
+
+        while True:
+            conn, addr = command_socket.accept()
+            command = conn.recv(1024).decode()
+            if command:
+                print(f"Node {self.node_id} received command: {command}")
+                self.menu(command)
+            conn.close()
 
     def start_server(self):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -81,42 +99,45 @@ class BlockchainNetworkNode:
             client_socket.close()
 
     def process_message(self, message):
-        message_type = message.msg_type
-        data = message.content
-        if message_type!='Echo':
-            messageId = f"{message.msg_type}{message.content}{message.sender}"
-        else:
-            messageId = f"{data.msg_type}{data.content}{data.sender}"   
+        if (self.did_notorize==False):
+            message_type = message.msg_type
+            data = message.content
+            if message_type!='Echo':
+                messageId = f"{message.msg_type}{message.content}{message.sender}"
+            else:
+                messageId = f"{data.msg_type}{data.content}{data.sender}"   
 
-        if(messageId in self.message_queue or data in self.message_queue):
-            #check if the message is already in the queue
-            #print(f"Node {self.node_id} received a message he had received before\n")  
-            return
-        
-        self.message_queue.append(messageId)
-        if message_type == 'Propose':
-            self.epochBlock= data
-            print(f'Node {self.node_id} received Propose from {message.sender}\n')
-            self.current_epoch = data.epoch           
-            self.broadcast_echo(message)
-            if (self.biggestNtChain<len(message.longestChain)) or self.biggestNtChain==0 and len(message.longestChain)==0:
-                self.biggestNtChain=len(message.longestChain)
-                self.notarized_blocks=message.longestChain
-                self.vote_block(data)
-            self.notorize_block_votes(data) 
-        elif message_type == 'Vote':
-            print(f'Node {self.node_id} received Vote from {message.sender}\n')
-            self.broadcast_echo(message)
-            self.notorize_block_votes(data)
-        elif message_type == 'Echo':
-            print(f'{self.node_id} received echo {data.msg_type}" from "{message.sender}\n')
-            if data.msg_type=='Propose':
-                print(f'{self.node_id} received propose in the Echo from { data.sender}\n')
-                self.current_epoch = data.epoch
-                self.vote_block(data.content)
-            elif data.msg_type=='Vote':
-                print(f'{self.node_id} received Vote in the Echo from {data.sender}\n')
-                self.notorize_block_votes(data.content)
+            if(messageId in self.message_queue or data in self.message_queue):
+                #check if the message is already in the queue
+                #print(f"Node {self.node_id} received a message he had received before\n")  
+                return
+            
+            self.message_queue.append(messageId)
+            if message_type == 'Propose':
+                self.epochBlock= data
+                print(f'Node {self.node_id} received Propose from {message.sender}\n')
+                self.current_epoch = data.epoch           
+                self.broadcast_echo(message)
+                if (self.biggestNtChain<len(message.longestChain)) or self.biggestNtChain==0 and len(message.longestChain)==0:
+                    self.biggestNtChain=len(message.longestChain)
+                    self.notarized_blocks=message.longestChain
+                    self.vote_block(data)
+                self.notorize_block_votes(data) 
+            elif message_type == 'Vote':
+                print(f'Node {self.node_id} received Vote from {message.sender}\n')
+                self.broadcast_echo(message)
+                self.notorize_block_votes(data)
+            elif message_type == 'Echo':
+                print(f'{self.node_id} received echo {data.msg_type}" from "{message.sender}\n')
+                if data.msg_type=='Propose':
+                    print(f'{self.node_id} received propose in the Echo from { data.sender}\n')
+                    self.current_epoch = data.epoch
+                    self.vote_block(data.content)
+                elif data.msg_type=='Vote':
+                    print(f'{self.node_id} received Vote in the Echo from {data.sender}\n')
+                    self.notorize_block_votes(data.content)
+        else: 
+            return            
 
     def propose_block(self):
         if not self.leader: # Not the leader of this epoch( Only the leader can propose a block)
@@ -183,6 +204,7 @@ class BlockchainNetworkNode:
             self.votes += 1 # Increment the vote counter for the block
             # Check if the block has more than half of the votes
             if self.votes > len(self.peers)/ 2:
+                self.did_notorize=True
                 print(f"Node {self.node_id} notarized block {block.length}\n")
                 epoch = block.epoch
                 for blockInChain in self.blockchain:
@@ -432,12 +454,21 @@ class BlockchainNetworkNode:
 
     @status.setter
     def status(self, value):
-        self._status = value 
+        self._status = value
 
     def menu(self, inp):
-        if inp =='l':
+        if inp=='t':
+            self.generate_random_transaction()
+        elif inp == 'a':
+            print("a conectar")
+            for i in range(self.num_of_peers):
+                if (self.port!=5000+i):
+                    self.add_node(("127.0.0.1" , 5000+i))
+            print(self.peers)        
+        elif inp == 'l':
+            print("TU AGORA ÉS O LÍDER MPT")
             self.leader = True 
-        elif inp =='s':
+        elif inp == 's':
             self.advance_epoch() 
         elif inp == "e":
             self.resetState()
@@ -453,6 +484,8 @@ class BlockchainNetworkNode:
             self.print_info_divider(f"BlockChain of node {self.node_id}", Fore.BLUE)
             self.print_chain(self.blockchain)
             self.print_info_divider(f"End of BlockChain of node {self.node_id}", Fore.BLUE)
+        else:
+            self.num_of_peers = int(inp)
             
     def print_chain(self, chain):
         print()
@@ -475,3 +508,31 @@ class BlockchainNetworkNode:
                 print(color + text + Style.RESET_ALL)  # In case the text is wider than the terminal width
         else:
             print(color + '-' * columns + Style.RESET_ALL)
+
+def main():
+    if len(sys.argv) != 3:
+        print("Usage: BlockchainNetworkNode.py <node_id> <port>")
+        return
+
+    node_id = int(sys.argv[1])
+    port = int(sys.argv[2])
+    BlockchainNetworkNode(node_id, "127.0.0.1", port)
+
+if __name__ == "__main__":
+        main()  
+
+            
+""" def main():
+    var = int(input("pls enter the node id: "))
+    node = BlockchainNetworkNode(var,"127.0.0.1" , 5000+var)
+    
+    port = int(input("number of nodes"))
+    for i in range(port):
+        if (5000+var!=5000+i):
+            node.add_node(("127.0.0.1" , 5000+i))
+
+    while True:
+        node.menu()
+ """
+""" if __name__ == "__main__":
+        main()                 """
