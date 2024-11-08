@@ -42,7 +42,6 @@ class BlockchainNetworkNode:
         self.command_listener()
 
     def command_listener(self):
-        print("Já está a ouvir")
         command_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         command_socket.bind((self.host, self.port + 1000))  # Usa uma porta diferente para o comando
         command_socket.listen(1)
@@ -51,7 +50,6 @@ class BlockchainNetworkNode:
             conn, addr = command_socket.accept()
             command = conn.recv(1024).decode()
             if command:
-                print(f"Node {self.node_id} received command: {command}")
                 self.menu(command)
             conn.close()
 
@@ -331,6 +329,9 @@ class BlockchainNetworkNode:
         self.leader=False
         self.message_queue=[]
         self.epochBlock= None
+        self.did_notorize = False
+        self.print_info_divider(f"Epoch {self.current_epoch} ended")
+        print()
 
     @property
     def host(self):
@@ -458,16 +459,17 @@ class BlockchainNetworkNode:
         self._status = value
 
     def menu(self, inp):
-        if inp=='t':
+        if inp =='t':
             self.generate_random_transaction()
+        elif inp == 'p':
+            self.print_info_divider(f"Epoch {self.current_epoch} will start", Fore.CYAN)
+            print()
         elif inp == 'a':
-            print("a conectar")
             for i in range(self.num_of_peers):
                 if (self.port!=5000+i):
                     self.add_node(("127.0.0.1" , 5000+i))
-            print(self.peers)        
         elif inp == 'l':
-            print("TU AGORA ÉS O LÍDER MPT")
+            print("This node is the leader")
             self.leader = True 
         elif inp == 's':
             self.advance_epoch() 

@@ -42,6 +42,8 @@ def main():
 
         print()
         print_epoch_divider(f"Epoch {i} will start")
+        for k in range(NumberOfNodes):
+            communicate_with_node(k, 'p')
         print()
         print(f"The leader for epoch {i} is node {leader}.")
         
