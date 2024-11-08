@@ -205,11 +205,12 @@ class BlockchainNetworkNode:
             # Check if the block has more than half of the votes
             if self.votes > len(self.peers)/ 2:
                 self.did_notorize=True
-                print(f"Node {self.node_id} notarized block {block.length}\n")
                 epoch = block.epoch
                 for blockInChain in self.blockchain:
                     if blockInChain.epoch == epoch:
-                        self.notarized_blocks.append(blockInChain)
+                        if blockInChain not in self.notarized_blocks:
+                            print(f"Node {self.node_id} notarized block {block.length}\n")
+                            self.notarized_blocks.append(blockInChain)
 
     def finalize(self):
         while True:
