@@ -14,7 +14,7 @@ init(autoreset=True)
 
 class BlockchainNetworkNode:
     def __init__(self, node_id,host='127.0.0.1', port=5000):
-        initialBlock = Block.Block(previous_hash=0,epoch=0,length=0,transactions=[])
+        initialBlock = Block.Block(previous_hash=0,hash=0,epoch=0,length=0,transactions=[])
         self.host = host
         self.port = port
         self.node_id = node_id              # Unique identifier for the node
@@ -90,7 +90,7 @@ class BlockchainNetworkNode:
 
         if(messageId in self.message_queue or data in self.message_queue):
             #check if the message is already in the queue
-            print(f"message already received {message_type} with {data.msg_type} and {data.sender}")  
+            #print(f"Node {self.node_id} received a message he had received before\n")  
             return
         
         self.message_queue.append(messageId)
@@ -98,7 +98,7 @@ class BlockchainNetworkNode:
             self.epochBlock= data
             print(f'Node {self.node_id} received Propose from {message.sender}\n')
             self.current_epoch = data.epoch           
-            #self.broadcast_echo(message)
+            self.broadcast_echo(message)
             if (self.biggestNtChain<len(message.longestChain)) or self.biggestNtChain==0 and len(message.longestChain)==0:
                 self.biggestNtChain=len(message.longestChain)
                 self.notarized_blocks=message.longestChain
@@ -106,7 +106,7 @@ class BlockchainNetworkNode:
             self.notorize_block_votes(data) 
         elif message_type == 'Vote':
             print(f'Node {self.node_id} received Vote from {message.sender}\n')
-            #self.broadcast_echo(message)
+            self.broadcast_echo(message)
             self.notorize_block_votes(data)
         elif message_type == 'Echo':
             print(f'{self.node_id} received echo {data.msg_type}" from "{message.sender}\n')
@@ -126,11 +126,13 @@ class BlockchainNetworkNode:
         # Create a new block containing the pending transactions
         proposed_block = Block.Block(
             # Returns the hash of the last block ,if the list is empty , returns 0
-            previous_hash=self.blockchain[-1].calculate_hash() if self.blockchain else "0",  # Hash of the last block
+            previous_hash=self.blockchain[-1].hash if self.blockchain else "0",  # Hash of the last block
+            hash = 0, # this value serves just to create the block, it will be updated right away
             epoch=self.current_epoch,
             length=len(self.blockchain),
             transactions=self.pending_transactions
             )
+        proposed_block.hash = proposed_block.calculate_hash()
         self.blockchain.append(proposed_block)
         self.broadcast(Message.Message(msg_type="Propose", content=proposed_block, sender=self.node_id,longestChain=self.notarized_blocks))
 
@@ -153,6 +155,7 @@ class BlockchainNetworkNode:
         newBlock = Block.Block(
             # Returns the hash of the last block ,if the list is empty , returns 0
             previous_hash=block.previous_hash,  # Hash of the last block
+            hash=block.hash, 
             epoch=block.epoch,
             length=block.length,
             transactions=[]
@@ -454,7 +457,7 @@ class BlockchainNetworkNode:
     def print_chain(self, chain):
         print()
         for block in chain:
-            print(f"Block with epoch {block.epoch} and length {block.length} has {len(block.transactions)} transactions:")
+            print(f"Block with epoch {block.epoch}, length {block.length}, hash {block.hash[:8] if block.hash != 0 else block.hash } and previous hash {block.previous_hash[:8] if block.previous_hash != 0 else block.previous_hash} has {len(block.transactions)} transactions:")
             transcationNumber = 1
             for transaction in block.transactions:
                 print(f"\t Transaction {transcationNumber} [ID-{transaction.transaction_id} Sender-{transaction.sender} Receiver-{transaction.receiver} Amount:{transaction.amount:.2f}]")

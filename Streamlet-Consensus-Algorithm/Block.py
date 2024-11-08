@@ -1,8 +1,9 @@
 import hashlib
 import Transaction
 class Block:
-    def __init__(self, previous_hash, epoch, length, transactions):
-        self.previous_hash = previous_hash  
+    def __init__(self, previous_hash, hash, epoch, length, transactions):
+        self.previous_hash = previous_hash
+        self.hash = hash  
         self.epoch = epoch                   
         self.length = length                 
         self.transactions = transactions     
@@ -27,6 +28,16 @@ class Block:
     @previous_hash.setter
     def previous_hash(self, value):
         self._previous_hash = value
+        
+    # Getter for the block's hash
+    @property
+    def hash(self):
+        return self._hash
+
+    # Setter for the block's hash
+    @hash.setter
+    def hash(self, value):
+        self._hash = value
 
     # Getter for the epoch number
     @property

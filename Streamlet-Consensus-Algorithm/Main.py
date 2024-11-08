@@ -61,7 +61,7 @@ def main():
                          "If you want to see the notarized blocks insert 'N'.\n"
                          "If you want to see the finalized blocks insert 'F'.\n"
                          "If you want to see the entire blockChain insert 'B'.\n"
-                         "If you want to go to the next epoch insert 'E'.:\n=> ")
+                         "If you want to go to the next epoch insert 'E':\n=> ")
             while(Letter != 'E'):
                 if (Letter == 'N'):
                     print()
@@ -82,7 +82,7 @@ def main():
                          "If you want to see the finalized blocks insert 'F'.\n"
                          "If you want to see the entire blockChain insert 'B'.\n"
                          "If you want to see another node, insert the number you want to see.\n"
-                         "If you want to go to the next epoch insert 'E'.:\n=> ")
+                         "If you want to go to the next epoch insert 'E':\n=> ")
             print()
            
     
