@@ -35,7 +35,6 @@ class BlockchainNetworkNode:
         self.lock = threading.Lock()
         self.delta = 0
         self.epochBlock = None
-        self.did_notorize = False
 
         threading.Thread(target=self.start_server, daemon=True).start()
         threading.Thread(target=self.finalize, daemon=True).start()
@@ -97,43 +96,41 @@ class BlockchainNetworkNode:
             client_socket.close()
 
     def process_message(self, message):
-        if (self.did_notorize==False):
-            message_type = message.msg_type
-            data = message.content
-            if message_type!='Echo':
-                messageId = f"{message.msg_type}{message.content}{message.sender}"
-            else:
-                messageId = f"{data.msg_type}{data.content}{data.sender}"   
+        message_type = message.msg_type
+        data = message.content
+        if message_type!='Echo':
+            messageId = f"{message.msg_type}{message.content}{message.sender}"
+        else:
+            messageId = f"{data.msg_type}{data.content}{data.sender}"   
 
-            if(messageId in self.message_queue or data in self.message_queue):
-                #check if the message is already in the queue
-                #print(f"Node {self.node_id} received a message he had received before\n")  
-                return
-            
-            self.message_queue.append(messageId)
-            if message_type == 'Propose':
-                self.epochBlock= data
-                print(f'Node {self.node_id} received Propose from {message.sender}\n')
-                self.current_epoch = data.epoch           
-                self.broadcast_echo(message)
-                if (self.biggestNtChain<len(message.longestChain)) or self.biggestNtChain==0 and len(message.longestChain)==0:
-                    self.biggestNtChain=len(message.longestChain)
-                    self.notarized_blocks=message.longestChain
-                    self.vote_block(data)
-                self.notorize_block_votes(data) 
-            elif message_type == 'Vote':
-                print(f'Node {self.node_id} received Vote from {message.sender}\n')
-                self.broadcast_echo(message)
-                self.notorize_block_votes(data)
-            elif message_type == 'Echo':
-                print(f'{self.node_id} received echo {data.msg_type}" from "{message.sender}\n')
-                if data.msg_type=='Propose':
-                    print(f'{self.node_id} received propose in the Echo from { data.sender}\n')
-                    self.current_epoch = data.epoch
-                    self.vote_block(data.content)
-                elif data.msg_type=='Vote':
-                    print(f'{self.node_id} received Vote in the Echo from {data.sender}\n')
-                    self.notorize_block_votes(data.content)
+        if(messageId in self.message_queue or data in self.message_queue):
+            #check if the message is already in the queue
+            return
+        
+        self.message_queue.append(messageId)
+        if message_type == 'Propose':
+            self.epochBlock= data
+            print(f'Node {self.node_id} received Propose from {message.sender}\n')
+            self.current_epoch = data.epoch           
+            self.broadcast_echo(message)
+            if (self.biggestNtChain<len(message.longestChain)) or self.biggestNtChain==0 and len(message.longestChain)==0:
+                self.biggestNtChain=len(message.longestChain)
+                self.notarized_blocks=message.longestChain
+                self.vote_block(data)
+            self.notorize_block_votes(data) 
+        elif message_type == 'Vote':
+            print(f'Node {self.node_id} received Vote from {message.sender}\n')
+            self.broadcast_echo(message)
+            self.notorize_block_votes(data)
+        elif message_type == 'Echo':
+            print(f'{self.node_id} received echo {data.msg_type} from {message.sender}\n')
+            if data.msg_type=='Propose':
+                print(f'{self.node_id} received propose in the Echo from { data.sender}\n')
+                self.current_epoch = data.content.epoch
+                self.vote_block(data.content)
+            elif data.msg_type=='Vote':
+                print(f'{self.node_id} received Vote in the Echo from {data.sender}\n')
+                self.notorize_block_votes(data.content)
         else: 
             return            
 
@@ -196,7 +193,6 @@ class BlockchainNetworkNode:
         
         with self.lock:
             if block in self.notarized_blocks:
-                print("block already notarized")
                 return
             
             self.votes += 1 # Increment the vote counter for the block
@@ -231,6 +227,7 @@ class BlockchainNetworkNode:
         if len(self.finalized_blocks) > len(self.biggest_finalized_block):
             # Update the biggest finalized block if finalized_blocks is larger
             self.biggest_finalized_block = self.finalized_blocks.copy()
+            print(f"Node {self.node_id} finalized block {self.finalized_blocks[-1].length} and it's parent chain\n")
     
 
     def check_blockchain_notarization(self):
@@ -329,8 +326,7 @@ class BlockchainNetworkNode:
         self.leader=False
         self.message_queue=[]
         self.epochBlock= None
-        self.did_notorize = False
-        self.print_info_divider(f"Epoch {self.current_epoch} ended")
+        self.print_info_divider(f"Epoch {self.current_epoch - 1} ended", Fore.CYAN)
         print()
 
     @property
@@ -479,14 +475,17 @@ class BlockchainNetworkNode:
             self.print_info_divider(f"Notarized chain of node {self.node_id}", Fore.YELLOW)
             self.print_chain(self.notarized_blocks)
             self.print_info_divider(f"End of notarized chain of node {self.node_id}", Fore.YELLOW)
+            print()
         elif inp =='f':
-            self.print_info_divider(f"Notarized chain of node {self.node_id}", Fore.RED)
+            self.print_info_divider(f"Finalized chain of node {self.node_id}", Fore.RED)
             self.print_chain(self.finalized_blocks)
-            self.print_info_divider(f"End of notarized chain of node {self.node_id}", Fore.RED)
+            self.print_info_divider(f"End of finalized chain of node {self.node_id}", Fore.RED)
+            print()
         elif inp =='bl':
             self.print_info_divider(f"BlockChain of node {self.node_id}", Fore.BLUE)
             self.print_chain(self.blockchain)
             self.print_info_divider(f"End of BlockChain of node {self.node_id}", Fore.BLUE)
+            print()
         else:
             self.num_of_peers = int(inp)
             

@@ -21,7 +21,6 @@ def main():
         node_id = i 
         port = 5000 + i
         subprocess.Popen(['start', 'cmd', '/k', 'python', 'BlockchainNetworkNode.py', str(node_id), str(port)], shell=True)
-
     time.sleep(2)
 
     # Connection between all nodes
@@ -67,6 +66,43 @@ def main():
             communicate_with_node(j, 'e')
         print()
         
+        Info = int(input("If you want to go to the next epoch please insert -1.\n" 
+                         "If not, please insert the number of the node you want to check:\n=> "))
+        
+        if(Info == -1):
+            print()
+            continue
+        
+        else:
+            print()
+            Letter = input(f"Node {Info} selected.\n" 
+                         "If you want to see the notarized blocks insert 'N'.\n"
+                         "If you want to see the finalized blocks insert 'F'.\n"
+                         "If you want to see the entire blockChain insert 'B'.\n"
+                         "If you want to go to the next epoch insert 'E'.:\n=> ")
+            while(Letter != 'E'):
+                print(f"Please look at the replica {Info} to see what you asked for!\n")
+                if (Letter == 'N'):
+                    print()
+                    communicate_with_node(Info, 'b')
+                elif(Letter == 'F'):
+                    print()
+                    communicate_with_node(Info, 'f')
+                elif(Letter == 'B'):
+                    print()
+                    communicate_with_node(Info, 'bl')
+                else:
+                    Info = int(Letter)
+
+                print()
+                Letter = input(f"Node {Info} selected.\n" 
+                         "If you want to see the notarized blocks insert 'N'.\n"
+                         "If you want to see the finalized blocks insert 'F'.\n"
+                         "If you want to see the entire blockChain insert 'B'.\n"
+                         "If you want to see another node, insert the number you want to see.\n"
+                         "If you want to go to the next epoch insert 'E'.:\n=> ")
+            print() 
+                            
     print()
     print_simulation_divider("End of simulation")
     print()
