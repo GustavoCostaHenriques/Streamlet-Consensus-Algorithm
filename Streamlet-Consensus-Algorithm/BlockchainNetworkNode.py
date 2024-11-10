@@ -178,6 +178,7 @@ class BlockchainNetworkNode:
             )
         
         # Broadcast the vote to all peers
+        self.votes+=1
         self.broadcast(Message.Message(msg_type="Vote", content=newBlock, sender=self.node_id,longestChain=[]))
 
     def notorize_block_votes(self, block):
@@ -522,19 +523,3 @@ def main():
 
 if __name__ == "__main__":
         main()  
-
-            
-""" def main():
-    var = int(input("pls enter the node id: "))
-    node = BlockchainNetworkNode(var,"127.0.0.1" , 5000+var)
-    
-    port = int(input("number of nodes"))
-    for i in range(port):
-        if (5000+var!=5000+i):
-            node.add_node(("127.0.0.1" , 5000+i))
-
-    while True:
-        node.menu()
- """
-""" if __name__ == "__main__":
-        main()                 """

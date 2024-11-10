@@ -1,5 +1,3 @@
-import threading
-import BlockchainNetworkNode
 import random
 import time
 import os
@@ -109,9 +107,20 @@ def main():
     print()
                 
 def communicate_with_node(port, letter):
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect(('127.0.0.1', 6000 + port))
-                s.sendall(str(letter).encode())
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            # Attempt to connect to the server at the specified port
+            s.connect(('127.0.0.1', 6000 + port))
+            # Send the letter (converted to bytes)
+            s.sendall(str(letter).encode())
+    
+    except socket.error as e:
+        # Handle socket-related errors (e.g., connection issues)
+        print(f"Socket error occurred: {e}")
+    
+    except Exception as e:
+        # Handle any other exceptions
+        print(f"An error occurred: {e}")
                 
 def generateRandomLeader(NumberOfNodes):
     leader_index = random.randint(0,NumberOfNodes)
