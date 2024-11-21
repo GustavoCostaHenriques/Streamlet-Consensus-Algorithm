@@ -1,4 +1,6 @@
+import datetime
 import json
+import time
 import pickle
 import socket
 import sys
@@ -6,60 +8,71 @@ import threading
 import Block
 import Message
 import Transaction
+import hashlib
 import random
 import os
 from colorama import Fore, Style, init
 
 # Initialize colorama
+#todo: ALTERAR ECHO DOS VOTES, faltas crash
+
 init(autoreset=True)
 
 class BlockchainNetworkNode:
-    def __init__(self, node_id,host='127.0.0.1', port=5000):
-        initialBlock = Block.Block(previous_hash=0,hash=0,epoch=0,length=0,transactions=[])
+    def __init__(self, node_id,host='127.0.0.1', port=5000, numOfNodes=0,numOfEpochs=0, delta=0,seed=0):
+        initialBlock = Block.Block(previous_hash=0,hash=0,epoch=-1,length=0,transactions=[])
         self.host = host
-        self.num_of_peers= 0
+        self.num_of_peers = int(numOfNodes)
         self.port = port
         self.node_id = node_id              # Unique identifier for the node
         self.blockchain = [initialBlock]    # Local blockchain for the node
         self.biggestNtChain = 0             
         self.pending_transactions = []      # Transactions pending to be included in a block
         self.current_epoch = 0              # Current epoch number
+        self.numOfEpochs =int(numOfEpochs)
         self.notarized_blocks = []          # List of notarized blocks
         self.votes = 0                      # Dictionary with Block --> Votes
         self.finalized_blocks = []          # List of finalized blocks
         self.biggest_finalized_block = []   # Biggest list of finalized blocks
         self.leader = False                 # Indicates if the node is the leader for the current epoch
-        self.message_queue = []             # Queue to store received messages
-        self.peers = [(host, port)]         # List of peers connected to this node
-        self.status = "active"              # Current status of the node
+        self.message_queue = []   
+        self.echo_queue = []          # Queue to store received messages
+        self.peers = []         # List of peers connected to this node
+        self.status =True              # Current status of the node
         self.lock = threading.Lock()
-        self.delta = 0
+        self.delta = delta
         self.epochBlock = None
-
+        self.didUpdateEpoch= False
+        self.hashMapIdAdress={}
+        self.hashMapIdSocket ={}
+        self.seed =seed
+        
         threading.Thread(target=self.start_server, daemon=True).start()
         threading.Thread(target=self.finalize, daemon=True).start()
-        self.command_listener()
-
-    def command_listener(self):
-        command_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        command_socket.bind((self.host, self.port + 1000))  # Usa uma porta diferente para o comando
-        command_socket.listen(1)
-
-        while True:
-            conn, addr = command_socket.accept()
-            command = conn.recv(1024).decode()
-            if command:
-                self.menu(command)
-            conn.close()
 
     def start_server(self):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.bind((self.host, self.port))
         server_socket.listen()
-
         while True:
             client_socket, address = server_socket.accept()
             threading.Thread(target=self.handle_client, args=(client_socket,), daemon=True).start()
+
+    def startEpoch(self, i ):
+        print(f"-----------------epoch {i}---------------------")
+        leader = self.generateLeader()
+        print(f"leader is {leader}")
+        if leader == self.node_id:
+           print("I am the leader")
+           self.leader=True
+           time.sleep(0.2)
+           self.advance_epoch()     
+
+    def generateLeader(self):
+        seed = int(hashlib.sha256(str(self.current_epoch).encode()).hexdigest(), 16)
+        leader = seed % self.num_of_peers
+        return leader
+    
 
     def handle_client(self, client_socket):
         buffer = b''  # Temporary buffer to store received data
@@ -93,48 +106,64 @@ class BlockchainNetworkNode:
         except Exception as e:
             print(f'Error processing client: {e}')
         finally:
-            client_socket.close()
+        # Ensure the socket is closed even if there's an error
+            try:
+                client_socket.close()
+            except:
+                pass    
 
     def process_message(self, message):
         message_type = message.msg_type
         data = message.content
+        if  message_type!='Echo' and data.epoch!= self.current_epoch:
+            return
+        if message_type =='Echo' and data.content.epoch!=self.current_epoch:
+            return
         if message_type!='Echo':
             messageId = f"{message.msg_type}{message.content}{message.sender}"
         else:
             messageId = f"{data.msg_type}{data.content}{data.sender}"   
 
-        if(messageId in self.message_queue or data in self.message_queue):
-            #check if the message is already in the queue
+        if messageId in self.message_queue or messageId in self.echo_queue:
             return
         
-        self.message_queue.append(messageId)
+        if message_type == 'Echo':
+            self.echo_queue.append(messageId)  # Add Echo messages to echo_queue
+        else:
+            self.message_queue.append(messageId)
         if message_type == 'Propose':
-            self.epochBlock= data
+            if data!=None:
+                self.epochBlock= data
             print(f'Node {self.node_id} received Propose from {message.sender}\n')
-            self.current_epoch = data.epoch           
+            print(data)
+            self.current_epoch = data.epoch 
+            self.didUpdateEpoch=True          
             self.broadcast_echo(message)
             if (self.biggestNtChain<len(message.longestChain)) or self.biggestNtChain==0 and len(message.longestChain)==0:
                 self.biggestNtChain=len(message.longestChain)
                 self.notarized_blocks=message.longestChain
+                print("voto prpopse")
+                self.votes+=1
                 self.vote_block(data)
             self.notorize_block_votes(data) 
         elif message_type == 'Vote':
             print(f'Node {self.node_id} received Vote from {message.sender}\n')
-            self.broadcast_echo(message)
+            #self.broadcast_echo(message)
             self.notorize_block_votes(data)
         elif message_type == 'Echo':
-            print(f'{self.node_id} received echo {data.msg_type} from {message.sender}\n')
+            print(f'Node {self.node_id} received echo {data.msg_type} from {message.sender}\n')
             if data.msg_type=='Propose':
-                print(f'{self.node_id} received propose in the Echo from { data.sender}\n')
+                print(f'Node {self.node_id} received propose in the Echo from { data.sender}\n')
                 self.current_epoch = data.content.epoch
                 self.vote_block(data.content)
-            elif data.msg_type=='Vote':
-                print(f'{self.node_id} received Vote in the Echo from {data.sender}\n')
+            elif data.msg_type=='Vote': 
+                print(f'Node {self.node_id} received Vote in the Echo from {data.sender}\n')
                 self.notorize_block_votes(data.content)
         else: 
             return            
 
     def propose_block(self):
+        self.generate_random_transaction()
         if not self.leader: # Not the leader of this epoch( Only the leader can propose a block)
             print(f"Node {self.node_id} is not the leader for epoch {self.current_epoch}")
             return 
@@ -148,6 +177,8 @@ class BlockchainNetworkNode:
             length=len(self.blockchain),
             transactions=self.pending_transactions
             )
+        print("voto Porpose")
+        self.votes+=1
         proposed_block.hash = proposed_block.calculate_hash()
         self.blockchain.append(proposed_block)
         self.broadcast(Message.Message(msg_type="Propose", content=proposed_block, sender=self.node_id,longestChain=self.notarized_blocks))
@@ -166,7 +197,6 @@ class BlockchainNetworkNode:
         if len(block.transactions) == 0:
             print(f"Node {self.node_id} cannot vote for an empty block.")
             return 
-            
         self.blockchain.append(self.epochBlock) # Append the block received to the blockChain
         newBlock = Block.Block(
             # Returns the hash of the last block ,if the list is empty , returns 0
@@ -178,6 +208,7 @@ class BlockchainNetworkNode:
             )
         
         # Broadcast the vote to all peers
+        print("quando voto")
         self.votes+=1
         self.broadcast(Message.Message(msg_type="Vote", content=newBlock, sender=self.node_id,longestChain=[]))
 
@@ -195,9 +226,10 @@ class BlockchainNetworkNode:
         with self.lock:
             if block in self.notarized_blocks:
                 return
-            
+            print("quando recebo voto")
             self.votes += 1 # Increment the vote counter for the block
             # Check if the block has more than half of the votes
+            print(self.votes)
             if self.votes > len(self.peers)/ 2:
                 self.did_notorize=True
                 epoch = block.epoch
@@ -251,42 +283,44 @@ class BlockchainNetworkNode:
         if node_address not in self.peers:
             self.peers.append(node_address)
 
-    def send_message(self, node_address, message):
+    def send_message(self, node, message):
         if not message:
             print("Attempted to send an empty message.")
             return
+        if self.hashMapIdSocket[node]==None:
+            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            client_socket.settimeout(10)
+            self.hashMapIdSocket[node] = client_socket
+            try:
+                client_socket.connect(self.hashMapIdAdress[node])
+            except ConnectionRefusedError:
+                print(f"Node {node} disconnected")    
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
-                client_socket.connect(node_address)
-                serialized_message = pickle.dumps(message)
-                message_length = len(serialized_message)
-                # Send first the length of the message, then the message
-                client_socket.sendall(message_length.to_bytes(4, 'big') + serialized_message)
-        except ConnectionRefusedError:
-            print(f'Connection refused by {node_address}. The node may be offline.')
-        except socket.error as e:
-            print(f'Socket error occurred: {e}')
-        except json.JSONDecodeError:
-            print('Error encoding the message to JSON. Check the message structure.')
-        except TypeError as e:
-            print(f'Type error occurred: {e}. This may indicate an issue with message serialization.')
-        except Exception as e:
-            print(f'An unexpected error occurred: {e}')
+            client_socket = self.hashMapIdSocket[node]
+            serialized_message = pickle.dumps(message)
+            message_length = len(serialized_message)
+            client_socket.sendall(message_length.to_bytes(4, 'big') + serialized_message)
+        except Exception:
+            self.hashMapIdSocket[node] = None
+            print(f'Connection refused by {node}. The node may be offline.')
 
     def broadcast(self, msg):
         print(f"Node {self.node_id} sent {msg.msg_type}\n")
-        for node in self.peers[1:]:
+
+        for node in self.peers:
             messageId = f"{msg.msg_type}{msg.content}{msg.sender}" 
             self.message_queue.append(messageId)
-            self.send_message(node,msg)
+            #threading.Thread(target=self.send_message(node,msg), daemon=True).start()
+            self.send_message(node, msg)
 
     def broadcast_echo(self, msg):
         print(f"Node {self.node_id} sent echo\n")
-        for node in self.peers[1:]:
-            messageId = f"{msg.msg_type}{msg.content}{msg.sender}" 
-            self.message_queue.append(messageId)
-            self.send_message(node,Message.Message(msg_type="Echo",content=msg,sender=msg.sender,longestChain=[]))
-
+        for node in self.peers:
+            messageId = f"{msg.msg_type}{msg.content}{msg.sender}"
+            if messageId not in self.echo_queue: 
+                self.echo_queue.append(messageId)
+                self.send_message(node,Message.Message(msg_type="Echo",content=msg,sender=self.node_id,longestChain=[]))
+    
     def __repr__(self):
         return (f"BlockchainNetworkNode(node_id={self.node_id}, current_epoch={self.current_epoch}, "
                 f"blockchain_length={len(self.blockchain)}, pending_tx={len(self.pending_transactions)}, "
@@ -316,18 +350,19 @@ class BlockchainNetworkNode:
         transaction = Transaction.Transaction(sender=self.node_id, receiver=random.randint(1, len(self.peers)), transaction_id=random.randint(1000, 9999), amount=random.uniform(1.0, 100.0))
         self.add_transaction(transaction)
 
-    def advance_epoch(self):
-        self.current_epoch += 1        
+    def advance_epoch(self):       
         # Propose a block
         self.propose_block()
 
     def resetState(self):
+        print("-------reseting----------")
+        self.echo_queue=[]
         self.votes=0
         self.pending_transactions=[]
         self.leader=False
         self.message_queue=[]
         self.epochBlock= None
-        self.print_info_divider(f"Epoch {self.current_epoch - 1} ended", Fore.CYAN)
+        self.didUpdateEpoch=False    
         print()
 
     @property
@@ -455,41 +490,6 @@ class BlockchainNetworkNode:
     def status(self, value):
         self._status = value
 
-    def menu(self, inp):
-        if inp =='t':
-            self.generate_random_transaction()
-        elif inp == 'p':
-            self.print_info_divider(f"Epoch {self.current_epoch} will start", Fore.CYAN)
-            print()
-        elif inp == 'a':
-            for i in range(self.num_of_peers):
-                if (self.port!=5000+i):
-                    self.add_node(("127.0.0.1" , 5000+i))
-        elif inp == 'l':
-            print("This node is the leader")
-            self.leader = True 
-        elif inp == 's':
-            self.advance_epoch() 
-        elif inp == "e":
-            self.resetState()
-        elif inp =='b':
-            self.print_info_divider(f"Notarized chain of node {self.node_id}", Fore.YELLOW)
-            self.print_chain(self.notarized_blocks)
-            self.print_info_divider(f"End of notarized chain of node {self.node_id}", Fore.YELLOW)
-            print()
-        elif inp =='f':
-            self.print_info_divider(f"Finalized chain of node {self.node_id}", Fore.RED)
-            self.print_chain(self.finalized_blocks)
-            self.print_info_divider(f"End of finalized chain of node {self.node_id}", Fore.RED)
-            print()
-        elif inp =='bl':
-            self.print_info_divider(f"BlockChain of node {self.node_id}", Fore.BLUE)
-            self.print_chain(self.blockchain)
-            self.print_info_divider(f"End of BlockChain of node {self.node_id}", Fore.BLUE)
-            print()
-        else:
-            self.num_of_peers = int(inp)
-            
     def print_chain(self, chain):
         print()
         for block in chain:
@@ -504,6 +504,8 @@ class BlockchainNetworkNode:
         columns, _ = os.get_terminal_size()
         if text:
             # Calculate the padding on each side of the text to center it
+
+            
             padding = (columns - len(text) - 2) // 2  # Subtract 2 to account for spaces around the text
             if padding > 0:
                 print(color + '-' * padding + f" {text} " + '-' * padding + Style.RESET_ALL)
@@ -512,14 +514,67 @@ class BlockchainNetworkNode:
         else:
             print(color + '-' * columns + Style.RESET_ALL)
 
-def main():
-    if len(sys.argv) != 3:
-        print("Usage: BlockchainNetworkNode.py <node_id> <port>")
-        return
+    def setAdressMap(self):
+        with open("Sockets", "r") as socketsFile:
+            # Iterate through each line in the file
+            for line in socketsFile:
+                # Strip the line of any extra spaces or newline characters
+                line = line.strip()
+                
+                # Split the line into node_id and address part
+                parts = line.split(":")
+                
+                if len(parts) == 2: 
+                    node_id = int(parts[0])  
+                    address = parts[1] 
+                    ip, port = address.split(",")
+                    port = int(port)
+                    if node_id != self.node_id:
+                        self.hashMapIdAdress[node_id] = (ip,port)
 
+    def setSocketMap(self):
+        if self.current_epoch==0:
+            for i in range(self.num_of_peers):
+                if i != self.node_id:
+                    self.peers.append(i)
+                    self.hashMapIdSocket[i]=None
+
+def main():
+    infoFile = open("info","r")
+    numberOfNodes = int(infoFile.readline())
+    numberOfEpochs= int(infoFile.readline())
+    delta = int(infoFile.readline())
+    seed = int(infoFile.readline())
     node_id = int(sys.argv[1])
     port = int(sys.argv[2])
-    BlockchainNetworkNode(node_id, "127.0.0.1", port)
-
+    start_time_str = sys.argv[3]
+    start_time = datetime.datetime.strptime(start_time_str, "%H:%M").time()
+    current_time = datetime.datetime.now()
+    start_time_today = datetime.datetime.combine(current_time.date(), start_time)
+    if start_time_today <= current_time:
+        print(f"The specified time {start_time_str} has already passed for today.")
+        return
+    delay = (start_time_today - current_time).total_seconds()
+    threading.Timer(delay, start_epoch_thread, args=(node_id, port, numberOfNodes, numberOfEpochs, delta,seed)).start()
+    
+def start_epoch_thread(node_id, port, numberOfNodes, numberOfEpochs, delta,seed):    
+    node=BlockchainNetworkNode(node_id, "127.0.0.1", port,numberOfNodes,numberOfEpochs,delta,seed)
+    print(f"---------------- Node {node.node_id}-------------------")
+    time.sleep(1)
+    node.setAdressMap()
+    print(node.hashMapIdAdress)
+    node.setSocketMap()
+    print(node.hashMapIdSocket)
+    for i in range(numberOfEpochs):
+        if i>0:
+            time.sleep(2*delta)
+            node.resetState()
+            print(f"--------------epoch {i-1} ended---------------")
+        node.current_epoch=i    
+        threading.Thread(target=node.startEpoch, args=(i,), daemon=True).start()
+    time.sleep(2*delta)
+    node.resetState()
+    node.print_chain(node.notarized_blocks)
+    node.print_chain(node.finalized_blocks)     
 if __name__ == "__main__":
         main()  
