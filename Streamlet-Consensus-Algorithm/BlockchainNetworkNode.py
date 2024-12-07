@@ -5,6 +5,7 @@ import pickle
 import socket
 import sys
 import threading
+import traceback
 import Block
 import Message
 import Transaction
@@ -14,7 +15,7 @@ import os
 from colorama import Fore, Style, init
 
 # Initialize colorama
-#todo: ALTERAR ECHO DOS VOTES Echos n funcionam erro nonetyoe n tem epoch, n esta fixe rejoin 
+#todo: ALTERAR ECHO DOS VOTES Echos n funcionam erro nonetyoe n tem epoch(acho que ta fixe), se no crashar no primeira epoca mandar none , erro estanho em que n manda msg 
 init(autoreset=True)
 
 class BlockchainNetworkNode:
@@ -118,6 +119,8 @@ class BlockchainNetworkNode:
 
         except Exception as e:
             print(f'Error processing client: {e}')
+            error_details = traceback.format_exc()  # Capture traceback as a string
+            print(error_details)
         finally:
         # Ensure the socket is closed even if there's an error
             try:
@@ -162,7 +165,6 @@ class BlockchainNetworkNode:
         else:
             self.message_queue.append(messageId)
         if message_type == 'Propose':
-
             self.receivedRejoin=[]
             self.rejoinData={'epoch': None,'lastBlockchain':None,'lastNotarized':None,'lastFinalized':None}
             if data!=None:
@@ -211,34 +213,18 @@ class BlockchainNetworkNode:
         if self.rejoinData.get("epoch")< self.current_epoch:
             self.receivedRejoin.append(id)
             print(self.receivedRejoin)   
-
-    """ def makeRejoinRespMessage(self):
-        data={"epoch":None,"blockchain":None,"notarized": None, "finalized":None}
-        filename = f"Node {self.node_id}"
-        if not os.path.exists(filename):
-            print("File does not exist")
-            return
-        with open(filename,"rb") as f:
-            updatedNodeData = pickle.load(f)
-            data["epoch"] = updatedNodeData.get("epoch", [])
-            data["blockchain"] = self.processChain(updatedNodeData.get("blockchain", []),1)
-            data["notarized"] = self.processChain(updatedNodeData.get("notarized", []),2)
-            data["finalized"] = self.processChain(updatedNodeData.get("finalized", []),3)
-
-        message = Message.Message("RejoinResponse",content=data,sender=self.node_id,longestChain=[])
-        return message """
     
     def processChain(self,chain,num):
         processedChain=[]
         if num==1:
-            processedChain = self.chainPrecidingGivenhash(self.rejoinData.get("lastBlockchain"),chain)
+            processedChain = self.chainPrecidingGivenHash(self.rejoinData.get("lastBlockchain"),chain)
         elif num ==2:
-            processedChain = self.chainPrecidingGivenhash(self.rejoinData.get("lastNotarized"),chain)
+            processedChain = self.chainPrecidingGivenHash(self.rejoinData.get("lastNotarized"),chain)
         elif num==3:
-            processedChain = self.chainPrecidingGivenhash(self.rejoinData.get("lastFinalized"),chain)
+            processedChain = self.chainPrecidingGivenHash(self.rejoinData.get("lastFinalized"),chain)
         return processedChain
     
-    def chainPrecidingGivenhash(self, hash, chain):
+    def chainPrecidingGivenHash(self, hash, chain):
         if hash==None:
             return chain
         processedChain = []
@@ -265,19 +251,22 @@ class BlockchainNetworkNode:
             length=len(self.blockchain)+1,
             transactions=self.pending_transactions
             )
+        print("block made")
         self.votes.append(self.node_id)
         proposed_block.hash = proposed_block.calculate_hash()
         self.blockchain.append(proposed_block)
-        for i in self.peers:
-            if i in self.receivedRejoin:
-                self.hashMapIdSocket[i] = None
-                self.receivedRejoin.remove(i)
-                self.broadcastTo(Message.Message(msg_type="RejoinResponse", content=self.makeRejoinData(), sender=self.node_id,longestChain=[]),i)
+        print(self.peers)
+        sentRejoinResponse=False
+        for i in self.receivedRejoin:
+            self.broadcastTo(Message.Message(msg_type="RejoinResponse", content=self.makeRejoinData(), sender=self.node_id,longestChain=[]),i)
+            sentRejoinResponse= True
+        if sentRejoinResponse==True:       
             while len(self.receivedRejoin)!= self.ready:
-                continue   
-            else:    
+                    continue
+        self.receivedRejoin=[]
+        self.ready=[]
+        for i in self.peers:
                 self.broadcastTo(Message.Message(msg_type="Propose", content=proposed_block, sender=self.node_id,longestChain=self.notarized_blocks),i)
-
     def makeRejoinData(self):
         data={"epoch":None,"blockchain":None,"notarized": None, "finalized":None}
         filename = f"Node {self.node_id}"
@@ -563,58 +552,61 @@ class BlockchainNetworkNode:
     
     def rejoin(self):
         epoch = self.current_epoch
-        lastBlockBlockChain = self.blockchain[len(self.blockchain)-1]
-        lastBlockNotarized = self.notarized_blocks[len(self.notarized_blocks)-1]
-        if len(self.finalized_blocks)!=0:
-            lastFinalized = self.finalized_blocks[len(self.finalized_blocks)-1]
-        else:
-            lastFinalized=[]  
-        if lastFinalized==[]:
-             data = {"epoch":epoch,
-                "lastBlockBlockChain": lastBlockBlockChain.hash,
-                "lastBlockNotarized" : lastBlockNotarized.hash,
-                "lastFinalized" : None
+        
+        lastBlockBlockChain = self.blockchain[-1] if self.blockchain else self.blockchain[0]
+        lastBlockNotarized = self.notarized_blocks[-1] if self.notarized_blocks else []
+        lastFinalized = self.finalized_blocks[-1] if self.finalized_blocks else []
+
+        # Prepare the data dictionary
+        data = {
+            "epoch": epoch,
+            "lastBlockBlockChain": lastBlockBlockChain.hash,
+            "lastBlockNotarized": lastBlockNotarized.hash if lastBlockNotarized else None,
+            "lastFinalized": lastFinalized.hash if lastFinalized else None
         }
-        else:
-            data = {"epoch":epoch,
-                    "lastBlockBlockChain": lastBlockBlockChain.hash,
-                    "lastBlockNotarized" : lastBlockNotarized.hash,
-                    "lastFinalized" : lastFinalized.hash
-            }
-        self.broadcast(Message.Message("Rejoin",data,sender=self.node_id,longestChain=[]))
-        while self.updated==False:
-            continue
+
+        # Broadcast the message
+        self.broadcast(Message.Message("Rejoin", data, sender=self.node_id, longestChain=[]))
+
+        # Wait until the state is updated
+        while not self.updated:
+            pass
+
 
 def main():
-    infoFile = open("info","r")
-    numberOfNodes = int(infoFile.readline())
-    numberOfEpochs= int(infoFile.readline())
-    delta = int(infoFile.readline())
-    seed = int(infoFile.readline())
-    node_id = int(sys.argv[1])
-    port = int(sys.argv[2])
-    if not os.path.exists(f"Node {node_id}"):
-        name = f"Node {node_id}"
-        createFile(name)  
-        start_time_str = sys.argv[3]
-        start_time = datetime.datetime.strptime(start_time_str, "%H:%M").time()
-        current_time = datetime.datetime.now()
-        start_time_today = datetime.datetime.combine(current_time.date(), start_time)
-        if start_time_today <= current_time:
-            print(f"The specified time {start_time_str} has already passed for today.")
-            return
-        delay = (start_time_today - current_time).total_seconds()
-        threading.Timer(delay, start_epoch_thread, args=(node_id, port, numberOfNodes, numberOfEpochs, delta,seed)).start()
-    else:
-       node = BlockchainNetworkNode(node_id, "127.0.0.1", port,numberOfNodes,numberOfEpochs,delta,seed)
-       node.setAdressMap()
-       node.setSocketMap()
-       node.updateNode()
-       node.rejoin()
-       print(node.current_epoch)
-       node.finalized_blocks = reversed(node.finalized_blocks)
-       print("updated to the newest version")
-       startEpochRejoin(node)
+    try:
+        infoFile = open("info","r")
+        numberOfNodes = int(infoFile.readline())
+        numberOfEpochs= int(infoFile.readline())
+        delta = int(infoFile.readline())
+        seed = int(infoFile.readline())
+        node_id = int(sys.argv[1])
+        port = int(sys.argv[2])
+        if not os.path.exists(f"Node {node_id}"):
+            name = f"Node {node_id}"
+            createFile(name)  
+            start_time_str = sys.argv[3]
+            start_time = datetime.datetime.strptime(start_time_str, "%H:%M").time()
+            current_time = datetime.datetime.now()
+            start_time_today = datetime.datetime.combine(current_time.date(), start_time)
+            if start_time_today <= current_time:
+                print(f"The specified time {start_time_str} has already passed for today.")
+                return
+            delay = (start_time_today - current_time).total_seconds()
+            threading.Timer(delay, start_epoch_thread, args=(node_id, port, numberOfNodes, numberOfEpochs, delta,seed)).start()
+        else:
+            node = BlockchainNetworkNode(node_id, "127.0.0.1", port,numberOfNodes,numberOfEpochs,delta,seed)
+            node.setAdressMap()
+            node.setSocketMap()
+            node.updateNode()
+            node.rejoin()
+            print(node.current_epoch)
+            node.finalized_blocks = reversed(node.finalized_blocks)
+            print("updated to the newest version")
+            startEpochRejoin(node)
+    except KeyboardInterrupt:
+           os.remove(f"Node {node.node_id}") 
+           print("xau")
 
 def startEpochRejoin(node):
     time.sleep((2*node.delta)-1.155)
