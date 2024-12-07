@@ -6,7 +6,7 @@ class Block:
         self.hash = hash  
         self.epoch = epoch                   
         self.length = length                 
-        self.transactions = transactions     
+        self.transactions = transactions    
 
     # Method that calculates the hash of the current block.
     def calculate_hash(self):
