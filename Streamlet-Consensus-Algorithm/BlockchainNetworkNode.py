@@ -12,6 +12,7 @@ import Transaction
 import hashlib
 import random
 import os
+import queue
 from colorama import Fore, Style, init
 
 # Initialize colorama
@@ -19,7 +20,7 @@ from colorama import Fore, Style, init
 init(autoreset=True)
 
 class BlockchainNetworkNode:
-    def __init__(self, node_id,host='127.0.0.1', port=5000, numOfNodes=0,numOfEpochs=0, delta=0,seed=0):
+    def __init__(self, node_id,confusion_start,confusion_duration,host='127.0.0.1', port=5000, numOfNodes=0,numOfEpochs=0, delta=0):
         initialBlock = Block.Block(previous_hash=0,hash=0,epoch=-1,length=0,transactions=[])
         self.host = host
         self.num_of_peers = int(numOfNodes)
@@ -34,10 +35,9 @@ class BlockchainNetworkNode:
         self.votes = []                      # Dictionary with Block --> Votes
         self.finalized_blocks = []          # List of finalized blocks
         self.biggest_finalized_block = []   # Biggest list of finalized blocks
-        self.leader = False                 # Indicates if the node is the leader for the current epoch
-        self.message_queue = []   
+        self.leader = False                 # Indicates if the node is the 
         self.echo_queue = []
-        self.messages_to_read_queue = []          # Queue to store received messages
+        self.message_queue=[]
         self.peers = []         # List of peers connected to this node
         self.status =True              # Current status of the node
         self.lock = threading.Lock()
@@ -46,13 +46,15 @@ class BlockchainNetworkNode:
         self.didUpdateEpoch= False
         self.hashMapIdAdress={}
         self.hashMapIdSocket ={}
-        self.seed =seed
         self.updated= False
         self.canFinalize=False
         self.receivedRejoin=[]
         self.rejoinData={'epoch':None,"lastBlockchain":None,"lastNotarized":None,"lastFinalized":None}
         self.ready=0
         self.rejoined= False
+        self.confusion_start = int(confusion_start)
+        self.confusion_duration =  int(confusion_duration)
+        self.receivedForkReq=[]
 
         threading.Thread(target=self.start_server, daemon=True).start()
         threading.Thread(target=self.finalize, daemon=True).start()
@@ -74,12 +76,14 @@ class BlockchainNetworkNode:
         formatted_time = received_time.strftime("%M:%S") + f".{received_time.microsecond // 1000:03d}"
         print(f"-----------------epoch {self.current_epoch} started at {formatted_time}---------------------")
         leader = self.generateLeader()
-        print(f"leader is {leader}")
         if leader == self.node_id:
            print("I am the leader")
            self.leader=True
            time.sleep(0.2)
-           self.advance_epoch()     
+           self.advance_epoch() 
+        else:
+            print(f"Leader is {leader}")
+
 
     def generateLeader(self):
         seed = int(hashlib.sha256(str(self.current_epoch).encode()).hexdigest(), 16)
@@ -110,17 +114,17 @@ class BlockchainNetworkNode:
                     # Extract the full message
                     message_data = buffer[4:message_length + 4]
                     message = pickle.loads(message_data)
-                    
                     # Process the message
-                    self.process_message(message)
+                    if self.current_epoch < self.confusion_start or self.current_epoch > self.confusion_start+self.confusion_duration-1:
+                        self.process_message(message)
                     
                     # Clear the buffer of the processed message
                     buffer = buffer[message_length + 4:]
 
         except Exception as e:
             print(f'Error processing client: {e}')
-            error_details = traceback.format_exc()  # Capture traceback as a string
-            print(error_details)
+            traceback.print_exc()
+
         finally:
         # Ensure the socket is closed even if there's an error
             try:
@@ -129,15 +133,66 @@ class BlockchainNetworkNode:
                 pass    
 
 
+    def compareChains(self,data,type):
+        if type==1:
+            if data==self.blockchain:
+                return
+            with self.lock:
+                self.blockchain=self.cmp(self.blockchain,data)
+            
+        elif type==2:
+            if data ==self.notarized_blocks:
+                return
+            with self.lock:
+                self.notarized_blocks=self.cmp(self.notarized_blocks,data)
+            
+        elif type==3:
+            if data == self.finalized_blocks:
+                return
+            with self.lock:
+                self.finalized_blocks=self.cmp(self.finalized_blocks,data)
+            
+    def cmp(self,node_chain,received_chain):
+        if(received_chain == None):
+            return node_chain
+        if len(received_chain)>len(node_chain):
+            return received_chain
+        if len(received_chain)<len(node_chain):
+            return node_chain
+        node_index = 0
+        received_index = 0
+        newChain=[]
+        while node_index < len(node_chain) and received_index < len(received_chain):
+            node_block = node_chain[node_index]
+            received_block = received_chain[received_index]
+            if node_block.epoch == received_block.epoch:
+                node_index += 1
+                received_index += 1
+                newChain.append(node_block)
+            elif node_block.epoch < received_block.epoch:
+                newChain.append(node_block)
+                newChain.append(received_block)
+                received_index += 1
+                node_index +=1
+            elif node_block.epoch > received_block.epoch:  
+                newChain.append(received_block)   
+                newChain.append(node_block)
+                received_index += 1
+                node_index +=1
 
+        return newChain
+    
     def process_message(self, message):
         message_type = message.msg_type
         data = message.content
-        received_time = datetime.datetime.now()
-        formatted_time = received_time.strftime("%M:%S") + f".{received_time.microsecond // 1000:03d}"
-        print(f'Node {self.node_id} received {message_type} from {message.sender} and was received at {formatted_time}\n')
+        print(f'Node {self.node_id} received {message_type} from {message.sender}')
+        if message_type =="ForkCheck":
+            self.compareChains(data.get("blockchain"),1)
+            self.compareChains(data.get("notorized"),2)
+            self.compareChains(data.get("finalized"),3)
+            return
         if message_type=="Ready":
-            self.ready+=1
+            self.ready= self.ready+1
             return
         if message_type == "RejoinResponse":
             if self.updated==False:
@@ -145,7 +200,6 @@ class BlockchainNetworkNode:
                 self.updated=True
                 return
         elif message_type=="Rejoin":
-            #self.hashMapIdSocket[message.sender]= None
             self.processRejoin(data,message.sender)
             return
 
@@ -169,10 +223,9 @@ class BlockchainNetworkNode:
             self.rejoinData={'epoch': None,'lastBlockchain':None,'lastNotarized':None,'lastFinalized':None}
             if data!=None:
                 self.epochBlock= data
-            print("block received")
             self.current_epoch = data.epoch 
-            self.didUpdateEpoch=True          
-            #self.broadcast_echo(message)
+            self.didUpdateEpoch=True
+            #self.broadcast_echo(message)          
             if (self.biggestNtChain<len(message.longestChain)) or self.biggestNtChain==0 and len(message.longestChain)==0:
                 self.biggestNtChain=len(message.longestChain)
                 self.notarized_blocks=message.longestChain
@@ -181,8 +234,8 @@ class BlockchainNetworkNode:
                 self.vote_block(data)
             self.notorize_block_votes(data, message.sender)     
         elif message_type == 'Vote':
-            #self.broadcast_echo(message)
             self.notorize_block_votes(data, message.sender)
+            #self.broadcast_echo(message)
         elif message_type == 'Echo':
             if data.msg_type=='Propose':
                 self.current_epoch = data.content.epoch
@@ -202,7 +255,6 @@ class BlockchainNetworkNode:
         formatted_time = received_time.strftime("%M:%S") + f".{received_time.microsecond // 1000:03d}"
         print(f"-----------------epoch {self.current_epoch} started at {formatted_time}---------------------")    
         self.broadcastTo(Message.Message("Ready",None,self.node_id,None),id)
-            
            
 
     def processRejoin(self, data,id):
@@ -212,7 +264,7 @@ class BlockchainNetworkNode:
         self.rejoinData["lastFinalized"] = data.get('lastFinalized')
         if self.rejoinData.get("epoch")< self.current_epoch:
             self.receivedRejoin.append(id)
-            print(self.receivedRejoin)   
+            print(f"Received rejoin request from node {id}")
     
     def processChain(self,chain,num):
         processedChain=[]
@@ -234,8 +286,6 @@ class BlockchainNetworkNode:
             processedChain.append(chain[i])
         return processedChain
             
-
-
     def propose_block(self):
         self.generate_random_transaction()
         if not self.leader: # Not the leader of this epoch( Only the leader can propose a block)
@@ -251,22 +301,21 @@ class BlockchainNetworkNode:
             length=len(self.blockchain)+1,
             transactions=self.pending_transactions
             )
-        print("block made")
         self.votes.append(self.node_id)
         proposed_block.hash = proposed_block.calculate_hash()
         self.blockchain.append(proposed_block)
-        print(self.peers)
         sentRejoinResponse=False
         for i in self.receivedRejoin:
             self.broadcastTo(Message.Message(msg_type="RejoinResponse", content=self.makeRejoinData(), sender=self.node_id,longestChain=[]),i)
             sentRejoinResponse= True
         if sentRejoinResponse==True:       
             while len(self.receivedRejoin)!= self.ready:
-                    continue
+                continue
         self.receivedRejoin=[]
-        self.ready=[]
+        self.ready=0
         for i in self.peers:
-                self.broadcastTo(Message.Message(msg_type="Propose", content=proposed_block, sender=self.node_id,longestChain=self.notarized_blocks),i)
+            self.broadcastTo(Message.Message(msg_type="Propose", content=proposed_block, sender=self.node_id,longestChain=self.notarized_blocks),i)
+
     def makeRejoinData(self):
         data={"epoch":None,"blockchain":None,"notarized": None, "finalized":None}
         filename = f"Node {self.node_id}"
@@ -320,21 +369,23 @@ class BlockchainNetworkNode:
 
         Returns:
             None"""
-        
         with self.lock:
             if block in self.notarized_blocks:
                 return
             if id not in self.votes:
                     self.votes.append(id)
-            print(self.votes)
+            print(f"Votes received: {self.votes}")
             if len(self.votes) > len(self.peers)/ 2:
                 self.did_notorize=True
                 epoch = block.epoch
                 for blockInChain in self.blockchain:
-                    if blockInChain.epoch == epoch:
-                        if blockInChain not in self.notarized_blocks:
-                            print(f"Node {self.node_id} notarized block {block.length}\n")
-                            self.notarized_blocks.append(blockInChain)
+                    if blockInChain==None:
+                        continue
+                    else:
+                        if blockInChain.epoch == epoch:
+                            if blockInChain not in self.notarized_blocks:
+                                print(f"Node {self.node_id} notarized block {block.length}\n")
+                                self.notarized_blocks.append(blockInChain)
 
     def finalize(self):
         while True:
@@ -401,13 +452,9 @@ class BlockchainNetworkNode:
             serialized_message = pickle.dumps(message)
             message_length = len(serialized_message)
             client_socket.sendall(message_length.to_bytes(4, 'big') + serialized_message)
-            received_time = datetime.datetime.now()
-            formatted_time = received_time.strftime("%M:%S") + f".{received_time.microsecond // 1000:03d}"
-            print(f"message {message.msg_type} from {message.sender} was sent at {formatted_time} from {self.current_epoch}")
         except Exception as e:
             self.hashMapIdSocket[node] = -1
             client_socket.close()
-            #aqui
             print(f'Connection refused by {node}. The node may be offline.{e}')
 
     def broadcast(self, msg):
@@ -416,7 +463,6 @@ class BlockchainNetworkNode:
         self.message_queue.append(messageId)
         for node in self.peers:
             threading.Thread(target=self.send_message(node,msg), daemon=True).start()
-            #self.send_message(node, msg)
 
     def broadcastTo(self,msg,id):
         print(f"Node {self.node_id} sent {msg.msg_type} to {id}\n")
@@ -431,7 +477,6 @@ class BlockchainNetworkNode:
             self.echo_queue.append(messageId)
             for node in self.peers:
                 threading.Thread(target=self.send_message(node,Message.Message(msg_type="Echo",content=msg,sender=self.node_id,longestChain=[])), daemon=True).start()
-                #self.send_message(node,Message.Message(msg_type="Echo",content=msg,sender=self.node_id,longestChain=[],rejoinData=None))
     
     def __repr__(self):
         return (f"BlockchainNetworkNode(node_id={self.node_id}, current_epoch={self.current_epoch}, "
@@ -495,20 +540,6 @@ class BlockchainNetworkNode:
                 print(f"\t Transaction {transcationNumber} [ID-{transaction.transaction_id} Sender-{transaction.sender} Receiver-{transaction.receiver} Amount:{transaction.amount:.2f}]")
                 transcationNumber += 1
             print()
-        
-    def print_info_divider(self, text="", color=Fore.RED):   
-        columns, _ = os.get_terminal_size()
-        if text:
-            # Calculate the padding on each side of the text to center it
-
-            
-            padding = (columns - len(text) - 2) // 2  # Subtract 2 to account for spaces around the text
-            if padding > 0:
-                print(color + '-' * padding + f" {text} " + '-' * padding + Style.RESET_ALL)
-            else:
-                print(color + text + Style.RESET_ALL)  # In case the text is wider than the terminal width
-        else:
-            print(color + '-' * columns + Style.RESET_ALL)
 
     def setAdressMap(self):
         with open("Sockets", "r") as socketsFile:
@@ -572,6 +603,12 @@ class BlockchainNetworkNode:
         while not self.updated:
             pass
 
+    def checkForFork(self):
+        data={"blockchain": self.blockchain,
+              "notarized": self.notarized_blocks,
+              "finalized": self.finalized_blocks}
+        self.broadcast(Message.Message("ForkCheck",data,self.node_id,len(self.blockchain)))
+        time.sleep(0.5)
 
 def main():
     try:
@@ -579,13 +616,14 @@ def main():
         numberOfNodes = int(infoFile.readline())
         numberOfEpochs= int(infoFile.readline())
         delta = int(infoFile.readline())
-        seed = int(infoFile.readline())
         node_id = int(sys.argv[1])
         port = int(sys.argv[2])
         if not os.path.exists(f"Node {node_id}"):
             name = f"Node {node_id}"
             createFile(name)  
             start_time_str = sys.argv[3]
+            confusion_start = sys.argv[4]
+            confusion_duration = sys.argv[5]
             start_time = datetime.datetime.strptime(start_time_str, "%H:%M").time()
             current_time = datetime.datetime.now()
             start_time_today = datetime.datetime.combine(current_time.date(), start_time)
@@ -593,20 +631,18 @@ def main():
                 print(f"The specified time {start_time_str} has already passed for today.")
                 return
             delay = (start_time_today - current_time).total_seconds()
-            threading.Timer(delay, start_epoch_thread, args=(node_id, port, numberOfNodes, numberOfEpochs, delta,seed)).start()
+            threading.Timer(delay, start_epoch_thread, args=(node_id, port, numberOfNodes, numberOfEpochs, delta,confusion_start,confusion_duration)).start()
         else:
-            node = BlockchainNetworkNode(node_id, "127.0.0.1", port,numberOfNodes,numberOfEpochs,delta,seed)
+            node = BlockchainNetworkNode(node_id,0,0,"127.0.0.1", port,numberOfNodes,numberOfEpochs,delta)
             node.setAdressMap()
             node.setSocketMap()
             node.updateNode()
             node.rejoin()
-            print(node.current_epoch)
-            node.finalized_blocks = reversed(node.finalized_blocks)
             print("updated to the newest version")
             startEpochRejoin(node)
     except KeyboardInterrupt:
            os.remove(f"Node {node.node_id}") 
-           print("xau")
+           print("Simulation will end")
 
 def startEpochRejoin(node):
     time.sleep((2*node.delta)-1.155)
@@ -634,16 +670,19 @@ def startEpochRejoin(node):
             print(f"--------------epoch {node.current_epoch} ended at {formatted_time}---------------")
     node.canFinalize=True
     node.resetState()
+    node.checkForFork()
+    node.print_chain(node.blockchain)
     node.print_chain(node.notarized_blocks)
     node.print_chain(node.finalized_blocks)
-    os.remove(f"Node {node.node_id}")            
+    os.remove(f"Node {node.node_id}")
+    time.sleep(5)            
  
 def createFile(name):
     with open(name,'w') as file:
         return   
 
-def start_epoch_thread(node_id, port, numberOfNodes, numberOfEpochs, delta,seed):    
-    node=BlockchainNetworkNode(node_id, "127.0.0.1", port,numberOfNodes,numberOfEpochs,delta,seed)
+def start_epoch_thread(node_id, port, numberOfNodes, numberOfEpochs, delta,confusion_start,confusion_duration):    
+    node=BlockchainNetworkNode(node_id,confusion_start ,confusion_duration,"127.0.0.1", port,numberOfNodes,numberOfEpochs,delta)
     createFile(f"Node {node_id}")
     received_time = datetime.datetime.now()
     formatted_time = received_time.strftime("%M:%S") + f".{received_time.microsecond // 1000:03d}"
@@ -667,9 +706,12 @@ def start_epoch_thread(node_id, port, numberOfNodes, numberOfEpochs, delta,seed)
     time.sleep(2*delta)
     node.canFinalize=True
     node.resetState()
+    node.checkForFork()
+    node.print_chain(node.blockchain)
     node.print_chain(node.notarized_blocks)
     node.print_chain(node.finalized_blocks)
     os.remove(f"Node {node.node_id}")
+    time.sleep(5)
 
 if __name__ == "__main__":
         main()  
